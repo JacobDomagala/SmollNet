@@ -1,16 +1,30 @@
-#!/bin/bash
-SOURCE_DIR="/home/jdomagala/Work/SmollNet"
-BUILD_DIR="${SOURCE_DIR}/build"
+#!/usr/bin/env bash
+set -e
 
-mkdir -d ${BUILD_DIR}
-cd ${BUILD_DIR} || exit 0
+SOURCE=/home/jdomagala/Work/SmollNet
+BUILD=$SOURCE/build
 
-CUDA_DIR="/usr/local/cuda-12.8"
+CUDA=/usr/local/cuda-12.8
+CLANG=/usr/local/bin
 
-cmake \
-    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-    -DCUDA_ROOT=${CUDA_DIR} \
-    --fresh \
-    ..
+mkdir -p "$BUILD"
 
-make -j 24
+cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
+  -DCMAKE_CXX_COMPILER="$CLANG/clang++" \
+  -DCMAKE_CUDA_COMPILER="$CUDA/bin/nvcc" \
+  -DCMAKE_CUDA_ARCHITECTURES=89 \
+  -DCUDAToolkit_ROOT="$CUDA" \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+  -DCMAKE_INSTALL_PREFIX="$BUILD/smollnet" \
+  --fresh
+
+cmake --build "$BUILD" -j24 --target install
+
+SOURCE=/home/jdomagala/Work/SmollNet/example
+cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
+  -DCMAKE_CXX_COMPILER="$CLANG/clang++" \
+  -DSmollNet_ROOT=${BUILD}/smollnet \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+  --fresh
+
+cmake --build "$BUILD" -j24 --verbose

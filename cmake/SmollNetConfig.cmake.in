@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+if(NOT DEFINED CUDAToolkit_ROOT)
+  set(CUDAToolkit_ROOT "@SMOLLNET_CUDA_ROOT@")
+endif()
+
+include(CMakeFindDependencyMacro)
+find_dependency(CUDAToolkit REQUIRED)   # brings in CUDA::cudart
+
+include("${CMAKE_CURRENT_LIST_DIR}/SmollNetTargets.cmake")
