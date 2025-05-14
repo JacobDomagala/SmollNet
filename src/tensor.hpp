@@ -66,6 +66,7 @@ public:
   }
 
   Tensor sum(Tensor& other);
+  Tensor transpose(int d0, int d1) const;
 };
 
 Tensor operator+(Tensor& l, Tensor& r);

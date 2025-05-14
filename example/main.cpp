@@ -16,8 +16,10 @@ int main() {
   Tensor c = a + b;
   c.print();
 
-//   Tensor d = c.transpose(0, 1);
-//   // view: shape [3, 2], stride adjusted, no data copied
+  // view: shape [3, 2], stride adjusted, no data copied
+  Tensor d = c.transpose(0, 1);
+  d.print();
+
 
 //   Tensor e = d.contiguous();
 //   // materialized in row-major order; storage copied

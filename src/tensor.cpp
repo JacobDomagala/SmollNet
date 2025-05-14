@@ -27,6 +27,17 @@ Tensor Tensor::sum(Tensor &other) {
   return new_tensor;
 }
 
+Tensor Tensor::transpose(int d0, int d1) const {
+  TensorImpl* src = this->impl();
+  TensorImpl* view = new TensorImpl(*src);  // shallow copy
+  std::swap(view->sizes[d0], view->sizes[d1]);
+  std::swap(view->strides[d0], view->strides[d1]);
+  ++src->storage->refcount;
+  view->storage = src->storage;
+  view->refcount = 1;
+  return Tensor(view);
+}
+
 Tensor operator+(Tensor &l, Tensor &r) { return l.sum(r); }
 
 Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d) {
