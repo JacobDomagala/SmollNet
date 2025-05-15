@@ -23,10 +23,23 @@ __global__ void add_kernel(T *out, T *left, T *right, size_t n) {
     out[idx] = left[idx] + right[idx];
 }
 
+template <typename T>
+__global__ void sub_kernel(T *out, T *left, T *right, size_t n) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < n)
+    out[idx] = left[idx] - right[idx];
+}
+
 void launch_add(float *out, float *left, float *right, size_t numElems) {
   dim3 block(256);
   dim3 grid((numElems + block.x - 1) / block.x);
   add_kernel<<<grid, block>>>(out, left, right, numElems);
+}
+
+void launch_sub(float *out, float *left, float *right, size_t numElems) {
+  dim3 block(256);
+  dim3 grid((numElems + block.x - 1) / block.x);
+  sub_kernel<<<grid, block>>>(out, left, right, numElems);
 }
 
 } // namespace smollnet

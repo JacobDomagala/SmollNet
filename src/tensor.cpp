@@ -27,18 +27,38 @@ Tensor Tensor::sum(Tensor &other) {
   return new_tensor;
 }
 
+Tensor Tensor::sub(Tensor &other) {
+  assert(p_->dtype == other.impl()->dtype);
+  assert(p_->sizes == other.impl()->sizes);
+  assert(p_->elems == other.impl()->elems);
+  assert(p_->ndim == other.impl()->ndim);
+
+  auto new_tensor =
+      empty(p_->sizes.data(), p_->ndim, p_->dtype, p_->storage->device);
+
+  launch_sub(static_cast<float *>(new_tensor.data()),
+             static_cast<float *>(data()), static_cast<float *>(other.data()),
+             p_->elems);
+
+  return new_tensor;
+}
+
 Tensor Tensor::transpose(int d0, int d1) const {
   TensorImpl* src = this->impl();
-  TensorImpl* view = new TensorImpl(*src);  // shallow copy
+  ++src->storage->refcount;
+
+  TensorImpl* view = new TensorImpl(*src);
   std::swap(view->sizes[d0], view->sizes[d1]);
   std::swap(view->strides[d0], view->strides[d1]);
-  ++src->storage->refcount;
+
   view->storage = src->storage;
   view->refcount = 1;
+
   return Tensor(view);
 }
 
 Tensor operator+(Tensor &l, Tensor &r) { return l.sum(r); }
+Tensor operator-(Tensor &l, Tensor &r) { return l.sub(r); }
 
 Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d) {
   auto *storage = new Storage;

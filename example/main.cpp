@@ -20,6 +20,9 @@ int main() {
   Tensor d = c.transpose(0, 1);
   d.print();
 
+  Tensor e = c - b;
+  e.print();
+
 
 //   Tensor e = d.contiguous();
 //   // materialized in row-major order; storage copied
