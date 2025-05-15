@@ -77,11 +77,13 @@ public:
            p_->storage->refcount, p_->storage->ptr);
   }
 
-  Tensor sum(Tensor &other);
+  Tensor add(Tensor &other);
   Tensor sub(Tensor &other);
+  Tensor sum(int64_t dim);
   Tensor transpose(int d0, int d1) const;
 };
 
+Tensor sum(Tensor& t, int64_t dim);
 Tensor operator+(Tensor &l, Tensor &r);
 Tensor operator-(Tensor &l, Tensor &r);
 

@@ -23,6 +23,12 @@ int main() {
   Tensor e = c - b;
   e.print();
 
+  Tensor f = sum(e, 0);
+  f.print();
+
+  Tensor g = sum(f, 0);
+  g.print();
+
 
 //   Tensor e = d.contiguous();
 //   // materialized in row-major order; storage copied
