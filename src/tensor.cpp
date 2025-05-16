@@ -6,124 +6,152 @@
 
 namespace smollnet {
 
-Storage::~Storage() {
-  if (--refcount == 0)
-    cudaFree(ptr);
+Storage::~Storage()
+{
+   if (--refcount == 0)
+      cudaFree(ptr);
 }
 
-Tensor Tensor::sum(int64_t dim) { return ::smollnet::sum(*this, dim); }
-
-Tensor Tensor::add(Tensor &other) {
-  assert(p_->dtype == other.impl()->dtype);
-  assert(p_->sizes == other.impl()->sizes);
-  assert(p_->elems == other.impl()->elems);
-  assert(p_->ndim == other.impl()->ndim);
-
-  auto new_tensor =
-      empty(p_->sizes.data(), p_->ndim, p_->dtype, p_->storage->device);
-
-  launch_add(static_cast<float *>(new_tensor.data()),
-             static_cast<float *>(data()), static_cast<float *>(other.data()),
-             p_->elems);
-
-  return new_tensor;
+Tensor
+Tensor::sum(int64_t dim)
+{
+   return ::smollnet::sum(*this, dim);
 }
 
-Tensor Tensor::sub(Tensor &other) {
-  assert(p_->dtype == other.impl()->dtype);
-  assert(p_->sizes == other.impl()->sizes);
-  assert(p_->elems == other.impl()->elems);
-  assert(p_->ndim == other.impl()->ndim);
+Tensor
+Tensor::add(Tensor& other)
+{
+   assert(p_->dtype == other.impl()->dtype);
+   assert(p_->sizes == other.impl()->sizes);
+   assert(p_->elems == other.impl()->elems);
+   assert(p_->ndim == other.impl()->ndim);
 
-  auto new_tensor =
-      empty(p_->sizes.data(), p_->ndim, p_->dtype, p_->storage->device);
+   auto new_tensor = empty(p_->sizes.data(), p_->ndim, p_->dtype, p_->storage->device);
 
-  launch_sub(static_cast<float *>(new_tensor.data()),
-             static_cast<float *>(data()), static_cast<float *>(other.data()),
-             p_->elems);
+   launch_add(static_cast< float* >(new_tensor.data()), static_cast< float* >(data()),
+              static_cast< float* >(other.data()), p_->elems);
 
-  return new_tensor;
+   return new_tensor;
 }
 
-Tensor Tensor::transpose(int d0, int d1) const {
-  TensorImpl *src = this->impl();
-  ++src->storage->refcount;
+Tensor
+Tensor::sub(Tensor& other)
+{
+   assert(p_->dtype == other.impl()->dtype);
+   assert(p_->sizes == other.impl()->sizes);
+   assert(p_->elems == other.impl()->elems);
+   assert(p_->ndim == other.impl()->ndim);
 
-  TensorImpl *view = new TensorImpl(*src);
-  std::swap(view->sizes[d0], view->sizes[d1]);
-  std::swap(view->strides[d0], view->strides[d1]);
+   auto new_tensor = empty(p_->sizes.data(), p_->ndim, p_->dtype, p_->storage->device);
 
-  view->storage = src->storage;
-  view->refcount = 1;
+   launch_sub(static_cast< float* >(new_tensor.data()), static_cast< float* >(data()),
+              static_cast< float* >(other.data()), p_->elems);
 
-  return Tensor(view);
+   return new_tensor;
 }
 
-Tensor sum(Tensor &t, int64_t dim) {
-  auto *src = t.impl();
-  auto &dims = src->sizes;
-  auto new_rank = src->ndim - 1;
-  auto data_type = src->dtype;
-  auto device = src->storage->device;
+Tensor
+Tensor::transpose(int d0, int d1) const
+{
+   TensorImpl* src = this->impl();
+   ++src->storage->refcount;
 
-  // TODO: Check for correct dim!
+   TensorImpl* view = new TensorImpl(*src);
+   std::swap(view->sizes[d0], view->sizes[d1]);
+   std::swap(view->strides[d0], view->strides[d1]);
 
-  // build output shape
-  int64_t out_dims[3];
-  for (int64_t i = 0, o = 0; i < src->ndim; ++i)
-    if (i != dim)
-      out_dims[o++] = src->sizes[i];
+   view->storage = src->storage;
+   view->refcount = 1;
 
-  Tensor new_tensor = empty(out_dims, new_rank, data_type, device);
-
-  auto* srcp = t.data();
-  auto* dst = new_tensor.data();
-  if (dim == 0) {
-    int64_t d0 = src->sizes[0];
-    int64_t rest = std::max(src->sizes[1] * src->sizes[2], 1l);
-    launch_sum_dim0(dst, srcp, d0, rest);
-  } else if (dim == 1) {
-    launch_sum_dim1(dst, srcp, src->sizes[0], src->sizes[1], src->sizes[2]);
-  } else { // dim==2
-   // int64_t outer = src->sizes[0] * src->sizes[1];
-   // launch_sum_dim2(dst, srcp, outer, src->sizes[2]);
-  }
-  return new_tensor;
+   return Tensor(view);
 }
 
-Tensor operator+(Tensor &l, Tensor &r) { return l.add(r); }
-Tensor operator-(Tensor &l, Tensor &r) { return l.sub(r); }
+Tensor
+sum(Tensor& t, int64_t dim)
+{
+   auto* src = t.impl();
+   auto& dims = src->sizes;
+   auto new_rank = src->ndim - 1;
+   auto data_type = src->dtype;
+   auto device = src->storage->device;
 
-Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d) {
-  auto *storage = new Storage;
+   // TODO: Check for correct dim!
 
-  float *ptr;
-  size_t bytes = element_size(data) * product(dims, rank);
-  cudaMalloc(&ptr, bytes);
+   // build output shape
+   int64_t out_dims[3];
+   for (int64_t i = 0, o = 0; i < src->ndim; ++i)
+      if (i != dim)
+         out_dims[o++] = src->sizes[i];
 
-  storage->ptr = ptr;
-  storage->bytes = bytes;
-  storage->device = d;
+   Tensor new_tensor = empty(out_dims, new_rank, data_type, device);
 
-  auto *tensor = new TensorImpl(dims, rank, data);
-  tensor->storage = storage;
-
-  return Tensor{tensor};
+   auto* srcp = t.data();
+   auto* dst = new_tensor.data();
+   if (dim == 0)
+   {
+      int64_t d0 = src->sizes[0];
+      int64_t rest = std::max(src->sizes[1] * src->sizes[2], 1l);
+      launch_sum_dim0(dst, srcp, d0, rest);
+   }
+   else if (dim == 1)
+   {
+      launch_sum_dim1(dst, srcp, src->sizes[0], src->sizes[1], src->sizes[2]);
+   }
+   else
+   { // dim==2
+      int64_t outer = src->sizes[0] * src->sizes[1];
+      launch_sum_dim2(dst, srcp, outer, src->sizes[2]);
+   }
+   return new_tensor;
 }
 
-Tensor zeros(const int64_t *dims, size_t rank, DataType data, Device d) {
-  auto tensor = empty(dims, rank, data, d);
-  cudaMemset(tensor.data(), 0, element_size(data) * product(dims, rank));
-
-  return tensor;
+Tensor
+operator+(Tensor& l, Tensor& r)
+{
+   return l.add(r);
+}
+Tensor
+operator-(Tensor& l, Tensor& r)
+{
+   return l.sub(r);
 }
 
-Tensor ones(const int64_t *dims, size_t rank, DataType data, Device d) {
-  auto tensor = empty(dims, rank, data, d);
+Tensor
+empty(const int64_t* dims, size_t rank, DataType data, Device d)
+{
+   auto* storage = new Storage;
 
-  launch_fill(static_cast<float *>(tensor.data()), tensor.numel(), 1.0f);
+   float* ptr;
+   size_t bytes = element_size(data) * product(dims, rank);
+   cudaMalloc(&ptr, bytes);
 
-  return Tensor{tensor};
+   storage->ptr = ptr;
+   storage->bytes = bytes;
+   storage->device = d;
+
+   auto* tensor = new TensorImpl(dims, rank, data);
+   tensor->storage = storage;
+
+   return Tensor{tensor};
+}
+
+Tensor
+zeros(const int64_t* dims, size_t rank, DataType data, Device d)
+{
+   auto tensor = empty(dims, rank, data, d);
+   cudaMemset(tensor.data(), 0, element_size(data) * product(dims, rank));
+
+   return tensor;
+}
+
+Tensor
+ones(const int64_t* dims, size_t rank, DataType data, Device d)
+{
+   auto tensor = empty(dims, rank, data, d);
+
+   launch_fill(static_cast< float* >(tensor.data()), tensor.numel(), 1.0f);
+
+   return Tensor{tensor};
 }
 
 } // namespace smollnet
