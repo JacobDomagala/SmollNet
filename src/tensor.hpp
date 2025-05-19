@@ -163,6 +163,8 @@ Tensor
 zeros(const int64_t* dims, size_t rank, DataType t, Device d);
 Tensor
 ones(const int64_t* dims, size_t rank, DataType t, Device d);
+Tensor
+rand(const int64_t* dims, size_t rank, DataType t, Device d);
 
 template < size_t N >
 Tensor
@@ -186,6 +188,14 @@ ones(const int64_t (&dims)[N], DataType t, Device d)
 {
    static_assert(N <= 3, "We don't support more than 3 dimensional Tensors");
    return ones(dims, N, t, d);
+}
+
+template < size_t N >
+Tensor
+rand(const int64_t (&dims)[N], DataType t, Device d)
+{
+   static_assert(N <= 3, "We don't support more than 3 dimensional Tensors");
+   return rand(dims, N, t, d);
 }
 
 } // namespace smollnet
