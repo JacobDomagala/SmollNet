@@ -8,7 +8,7 @@ namespace smollnet {
 enum class Device
 {
    CUDA,
-   Host
+   CPU
 };
 
 enum class DataType

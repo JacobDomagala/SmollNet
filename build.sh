@@ -10,6 +10,7 @@ CLANG=/usr/local/bin
 mkdir -p "$BUILD"
 
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CXX_COMPILER="$CLANG/clang++" \
   -DCMAKE_CUDA_COMPILER="$CUDA/bin/nvcc" \
   -DCMAKE_CUDA_ARCHITECTURES=89 \
@@ -22,6 +23,7 @@ cmake --build "$BUILD" --target install
 
 SOURCE=/home/jdomagala/Work/SmollNet/example
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Debug \
   -DCMAKE_CXX_COMPILER="$CLANG/clang++" \
   -DSmollNet_ROOT=${BUILD}/smollnet \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
