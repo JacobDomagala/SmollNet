@@ -2,8 +2,34 @@
 #include "kernels.cuh"
 
 #include <cstdio>
+#include <ctime>
+
 #include <cuda.h>
+#include <curand_kernel.h>
+
 namespace smollnet {
+
+__global__ void random_init(float *out, size_t total, size_t seed) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (idx >= total)
+    return;
+
+  curandState state;
+  curand_init(seed, idx, 0, &state);
+
+  out[idx] = curand_uniform(&state);
+}
+
+void launch_random_init(void *out, size_t total) {
+  dim3 block(256);
+  dim3 grid((total + block.x - 1) / block.x);
+  unsigned long long seed = time(nullptr);
+
+  random_init<<<grid, block>>>(static_cast<float *>(out), total, seed);
+
+  CHECK_CUDA(cudaGetLastError());
+}
 
 template <typename T> __global__ void fill_kernel(T *data, size_t n, T value) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;

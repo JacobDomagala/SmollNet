@@ -66,8 +66,8 @@ Tensor matmul(Tensor &l, Tensor &r) {
 
   Tensor new_tensor = empty({l.dims()[0], r.dims()[1]}, l.dtype(), l.device());
 
-  launch_matmul(new_tensor.data(), l.data(), r.data(),
-                l.dims().data(), r.dims().data(), new_tensor.numel());
+  launch_matmul(new_tensor.data(), l.data(), r.data(), l.dims().data(),
+                r.dims().data(), new_tensor.numel());
 
   return new_tensor;
 }
@@ -135,6 +135,14 @@ Tensor ones(const int64_t *dims, size_t rank, DataType data, Device d) {
   auto tensor = empty(dims, rank, data, d);
 
   launch_fill(static_cast<float *>(tensor.data()), tensor.numel(), 1.0f);
+
+  return Tensor{tensor};
+}
+
+Tensor rand(const int64_t *dims, size_t rank, DataType data, Device d) {
+  auto tensor = empty(dims, rank, data, d);
+
+  launch_random_init(tensor.data(), tensor.numel());
 
   return Tensor{tensor};
 }

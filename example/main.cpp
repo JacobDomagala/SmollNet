@@ -9,7 +9,7 @@ using namespace smollnet;
 
 int main() {
   // contents: uninitialized float32 on GPU
-  Tensor a = empty({4, 8}, DataType::f32, Device::CUDA);
+  Tensor a = rand({4, 8}, DataType::f32, Device::CUDA);
   a.print();
   CHECK_CUDA(cudaDeviceSynchronize());
 
