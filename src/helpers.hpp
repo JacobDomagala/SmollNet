@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdlib>
+
 namespace smollnet {
     #define CHECK_CUDA(call) { \
     cudaError_t err = call; \

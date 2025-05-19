@@ -1,14 +1,20 @@
 #include "tensor.hpp"
+#include "helpers.hpp"
 #include "kernels.cuh"
 
 #include <cassert>
+#include <cstring>
 #include <cuda_runtime.h>
 
 namespace smollnet {
 
 Storage::~Storage() {
-  if (--refcount == 0)
-    cudaFree(ptr);
+  if (--refcount == 0) {
+    if (device == Device::CUDA)
+      cudaFree(ptr);
+    else
+      free(ptr);
+  }
 }
 
 Tensor Tensor::sum(int64_t dim) { return ::smollnet::sum(*this, dim); }
@@ -57,6 +63,36 @@ Tensor Tensor::transpose(int d0, int d1) const {
   view->refcount = 1;
 
   return Tensor(view);
+}
+
+Tensor Tensor::cuda() {
+  if (this->device() == Device::CUDA) {
+    return Tensor(*this);
+  } else {
+    Tensor new_tensor =
+        empty(this->dims().data(), this->ndims(), this->dtype(), Device::CUDA);
+
+    CHECK_CUDA(cudaMemcpy(new_tensor.data(), this->data(),
+                          this->numel() * element_size(this->dtype()),
+                          cudaMemcpyHostToDevice));
+
+    return new_tensor;
+  }
+}
+
+Tensor Tensor::cpu() {
+  if (this->device() == Device::CPU) {
+    return Tensor(*this);
+  } else {
+    Tensor new_tensor =
+        empty(this->dims().data(), this->ndims(), this->dtype(), Device::CPU);
+
+    CHECK_CUDA(cudaMemcpy(new_tensor.data(), this->data(),
+                          this->numel() * element_size(this->dtype()),
+                          cudaMemcpyDeviceToHost));
+
+    return new_tensor;
+  }
 }
 
 Tensor matmul(Tensor &l, Tensor &r) {
@@ -112,7 +148,11 @@ Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d) {
 
   float *ptr;
   size_t bytes = element_size(data) * product(dims, rank);
-  cudaMalloc(&ptr, bytes);
+  if (d == Device::CUDA) {
+    CHECK_CUDA(cudaMalloc(&ptr, bytes));
+  } else {
+    ptr = static_cast<float *>(malloc(bytes));
+  }
 
   storage->ptr = ptr;
   storage->bytes = bytes;
@@ -126,8 +166,12 @@ Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d) {
 
 Tensor zeros(const int64_t *dims, size_t rank, DataType data, Device d) {
   auto tensor = empty(dims, rank, data, d);
-  cudaMemset(tensor.data(), 0, element_size(data) * product(dims, rank));
-
+  if (d == Device::CUDA) {
+    CHECK_CUDA(
+        cudaMemset(tensor.data(), 0, element_size(data) * product(dims, rank)));
+  } else {
+    memset(tensor.data(), 0, element_size(data) * product(dims, rank));
+  }
   return tensor;
 }
 
