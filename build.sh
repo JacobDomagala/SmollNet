@@ -18,7 +18,7 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_INSTALL_PREFIX="$BUILD/smollnet" \
   --fresh
 
-cmake --build "$BUILD" -j24 --target install
+cmake --build "$BUILD" --target install
 
 SOURCE=/home/jdomagala/Work/SmollNet/example
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
@@ -27,4 +27,4 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   --fresh
 
-cmake --build "$BUILD" -j24 --verbose
+cmake --build "$BUILD"

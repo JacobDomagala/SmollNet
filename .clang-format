@@ -1,0 +1,106 @@
+---
+Language:        				Cpp
+UseTab:          				Never
+ColumnLimit:     				100
+IndentWidth:     				3
+ContinuationIndentWidth: 		3
+TabWidth:        				3
+AccessModifierOffset: 			-2
+MaxEmptyLinesToKeep: 			2
+DisableFormat:   				false
+
+AlignAfterOpenBracket: 			Align
+AlignConsecutiveDeclarations: 	false
+AlignConsecutiveAssignments:	false
+AlignEscapedNewlinesLeft: 		true
+AlignOperands:   				true
+AlignTrailingComments: 			true
+
+BinPackArguments: 							true
+BinPackParameters: 							true
+AllowAllParametersOfDeclarationOnNextLine: 	false
+
+AlwaysBreakAfterDefinitionReturnType: 	None
+AlwaysBreakAfterReturnType: 			All
+
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass:      				true
+  AfterControlStatement: 		true
+  AfterEnum:       				true
+  AfterFunction:   				true
+  AfterNamespace:  				false
+  AfterObjCDeclaration: 		true
+  AfterStruct:     				true
+  AfterUnion:      				true
+  BeforeCatch:     				true
+  BeforeElse:      				true
+  IndentBraces:    				false
+
+AllowShortBlocksOnASingleLine: 			false
+AllowShortCaseLabelsOnASingleLine: 		false
+AllowShortFunctionsOnASingleLine: 		None
+AllowShortIfStatementsOnASingleLine: 	false
+AllowShortLoopsOnASingleLine: 			false
+KeepEmptyLinesAtTheStartOfBlocks: 		false
+
+BreakBeforeBinaryOperators: 				NonAssignment
+BreakBeforeTernaryOperators: 				true
+BreakConstructorInitializersBeforeComma: 	false
+BreakStringLiterals: 						true
+
+ConstructorInitializerAllOnOneLineOrOnePerLine:	true
+ConstructorInitializerIndentWidth: 				3
+
+Cpp11BracedListStyle: 				true
+
+IndentCaseLabels: 					true
+IndentWrappedFunctionNames: 		false
+NamespaceIndentation: 				None
+
+DerivePointerAlignment: 			false
+PointerAlignment: 					Left
+
+SpaceBeforeAssignmentOperators: 	true
+SpaceBeforeParens: 					ControlStatements
+SpaceInEmptyParentheses: 			false
+SpacesInParentheses: 				false
+SpacesInSquareBrackets: 			false
+SpacesInAngles:  					true
+
+SpacesBeforeTrailingComments: 		1
+SpacesInContainerLiterals: 			true
+SpacesInCStyleCastParentheses: 		false
+
+ReflowComments:  					true
+
+AlwaysBreakBeforeMultilineStrings: 	false
+AlwaysBreakTemplateDeclarations: 	false
+
+SpaceAfterCStyleCast: 				false
+ForEachMacros:						[ foreach, Q_FOREACH, BOOST_FOREACH ]
+ExperimentalAutoDetectBinPacking: 	false
+
+CommentPragmas:  '^ IWYU pragma:'
+
+PenaltyBreakBeforeFirstCallParameter: 	19
+PenaltyBreakComment: 					300
+PenaltyBreakFirstLessLess: 				0    # Changed to prevent breaking CUDA <<<...>>>
+PenaltyBreakString: 					1000
+PenaltyExcessCharacter: 				1000000
+PenaltyReturnTypeOnItsOwnLine: 			0
+
+ObjCBlockIndentWidth: 				2
+ObjCSpaceAfterProperty: 			false
+ObjCSpaceBeforeProtocolList: 		true
+BreakAfterJavaFieldAnnotations: 	false
+
+MacroBlockBegin: ''
+MacroBlockEnd:   ''
+
+# Added to recognize CUDA-specific keywords
+StatementMacros: [ __global__, __device__, __host__, __constant__, __shared__ ]
+
+# Added to prevent formatting CUDA kernel launch syntax
+DisableFormat: false
+CommentPragmas: '^ IWYU pragma:|^ CUDA_NO_FORMAT'
