@@ -67,39 +67,63 @@ class Tensor
    Tensor() : p_(nullptr)
    {
    }
+
    explicit Tensor(TensorImpl* p) : p_(p)
    {
       ++p_->refcount;
    }
+
    Tensor(const Tensor& o) : p_(o.p_)
    {
       ++p_->refcount;
    }
+
    ~Tensor()
    {
       if (p_ && --p_->refcount == 0)
          delete p_;
    }
+
    TensorImpl*
    impl() const noexcept
    {
       return p_;
    }
+
    int64_t
    size(int d) const noexcept
    {
       return p_->sizes[d];
    }
+
+   Device
+   device() const noexcept{
+      return p_->storage->device;
+   }
+
+   DataType
+   dtype() const noexcept{
+      return p_->dtype;
+   }
+
    void*
    data() const noexcept
    {
       return static_cast< char* >(p_->storage->ptr);
    }
+
    size_t
    numel() const noexcept
    {
       return p_->elems;
    }
+
+   std::array<int64_t, 3>
+   dims() const noexcept
+   {
+      return p_->sizes;
+   }
+
    void
    print() const noexcept
    {
@@ -112,13 +136,19 @@ class Tensor
 
    Tensor
    add(Tensor& other);
+
    Tensor
    sub(Tensor& other);
+
    Tensor
    sum(int64_t dim);
+
    Tensor
    transpose(int d0, int d1) const;
 };
+
+Tensor
+matmul(Tensor& l, Tensor& r);
 
 Tensor
 sum(Tensor& t, int64_t dim);

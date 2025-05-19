@@ -1,7 +1,8 @@
+#include "helpers.hpp"
 #include "kernels.cuh"
 
+#include <cstdio>
 #include <cuda.h>
-
 namespace smollnet {
 
 template <typename T> __global__ void fill_kernel(T *data, size_t n, T value) {
@@ -14,6 +15,7 @@ void launch_fill(float *ptr, size_t numElems, float val) {
   dim3 block(256);
   dim3 grid((numElems + block.x - 1) / block.x);
   fill_kernel<<<grid, block>>>(ptr, numElems, val);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 template <typename T>
@@ -27,6 +29,7 @@ void launch_add(float *out, float *left, float *right, size_t numElems) {
   dim3 block(256);
   dim3 grid((numElems + block.x - 1) / block.x);
   add_kernel<<<grid, block>>>(out, left, right, numElems);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 template <typename T>
@@ -40,6 +43,7 @@ void launch_sub(float *out, float *left, float *right, size_t numElems) {
   dim3 block(256);
   dim3 grid((numElems + block.x - 1) / block.x);
   sub_kernel<<<grid, block>>>(out, left, right, numElems);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 // Sum over dim-0 (collapse first index)
@@ -72,6 +76,7 @@ void launch_sum_dim0(void *out, void *in, int64_t d0, int64_t rest) {
   int grid = (n + block - 1) / block;
   k_sum_dim0<<<grid, block>>>(static_cast<const float *>(in),
                               static_cast<float *>(out), d0, rest);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 __global__ void k_sum_dim1(const float *__restrict__ in,
@@ -102,6 +107,8 @@ void launch_sum_dim1(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
   int grid = (n + block - 1) / block;
   k_sum_dim1<<<grid, block>>>(static_cast<const float *>(in),
                               static_cast<float *>(out), d0, d1, d2);
+
+  CHECK_CUDA(cudaGetLastError());
 }
 
 __global__ void k_sum_dim2(const float *in, float *out, int64_t outer,
@@ -120,12 +127,47 @@ __global__ void k_sum_dim2(const float *in, float *out, int64_t outer,
   out[idx] = acc;
 }
 
-void launch_sum_dim2(float *out, const float *in, int64_t d0, int64_t d1,
-                     int64_t d2) {
+void launch_sum_dim2(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
   int64_t outer = d0 * d1;
   int block = 256;
   int grid = (outer + block - 1) / block;
-  k_sum_dim2<<<grid, block>>>(in, out, outer, d2);
+  k_sum_dim2<<<grid, block>>>(static_cast<const float *>(in),
+                              static_cast<float *>(out), outer, d2);
+
+  CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void matmul_kernel(float *out, float *left, float *right, int64_t l0,
+                              int64_t l1, int64_t l2, int64_t r0, int64_t r1,
+                              int64_t r2, size_t total) {
+
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+  if (idx >= total)
+    return;
+
+  int i = idx / r1;
+  int j = idx % r1;
+
+  float acc = 0.0f;
+  for (int id = 0; id < l1; ++id) {
+    acc += left[l1 * i + id] * right[r1 * j + id];
+  }
+
+  out[idx] = acc;
+}
+
+void launch_matmul(void *out, void *left, void *right, int64_t ldims[3],
+                   int64_t rdims[3], size_t total) {
+
+  int block = 256;
+  int grid = (total + block - 1) / block;
+
+  matmul_kernel<<<grid, block>>>(
+      static_cast<float *>(out), static_cast<float *>(left),
+      static_cast<float *>(right), ldims[0], ldims[1], ldims[2], rdims[0],
+      rdims[1], rdims[2], total);
+
+  CHECK_CUDA(cudaGetLastError());
 }
 
 } // namespace smollnet

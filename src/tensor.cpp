@@ -59,6 +59,19 @@ Tensor Tensor::transpose(int d0, int d1) const {
   return Tensor(view);
 }
 
+Tensor matmul(Tensor &l, Tensor &r) {
+  // Check dims
+  assert(l.dims().size() == r.dims().size());
+  assert(l.dims()[1] == r.dims()[0]);
+
+  Tensor new_tensor = empty({l.dims()[0], r.dims()[1]}, l.dtype(), l.device());
+
+  launch_matmul(new_tensor.data(), l.data(), r.data(),
+                l.dims().data(), r.dims().data(), new_tensor.numel());
+
+  return new_tensor;
+}
+
 Tensor sum(Tensor &t, int64_t dim) {
   auto *src = t.impl();
   auto &dims = src->sizes;
