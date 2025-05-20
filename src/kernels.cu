@@ -212,4 +212,21 @@ void launch_relu(void* out, void* in, size_t total) {
    CHECK_CUDA(cudaGetLastError());
 }
 
+
+__global__
+void tanh_kernel(float* out, float* in, size_t total) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if(idx < total) out[idx] = tanhf(in[idx]);
+}
+
+void launch_tanh(void* out, void* in, size_t total) {
+
+   int block = 256;
+   int grid = (total + block - 1) / block;
+
+   tanh_kernel<<<grid, block>>>(static_cast<float *>(out), static_cast<float *>(in), total);
+   CHECK_CUDA(cudaGetLastError());
+}
+
 } // namespace smollnet
