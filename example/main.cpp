@@ -1,5 +1,6 @@
 #include <helpers.hpp>
 #include <tensor.hpp>
+#include <neuralnet.hpp>
 #include <types.hpp>
 
 #include <cuda_runtime.h>
@@ -46,12 +47,6 @@ int main() {
   Tensor h_host = h.cpu();
   CHECK_CUDA(cudaDeviceSynchronize());
 
-  //   Tensor e = d.contiguous();
-  //   // materialized in row-major order; storage copied
-
-  //   Tensor f = e.slice(1, 0, 2);
-  //   // selects rows 0 and 1, shape changes, same storage aliased
-
-  //   f.backward();
-  // triggers autograd graph execution if requires_grad == true
+  auto net = Dense(Linear(32, 12), ReLU(), Linear(12,1));
+  net.print();
 }

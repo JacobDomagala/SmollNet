@@ -61,7 +61,30 @@ public:
 
   explicit Tensor(TensorImpl *p) : p_(p) { ++p_->refcount; }
 
+  Tensor &operator=(const Tensor &o) {
+    if (this != &o) {
+      if (p_ && --p_->refcount == 0)
+        delete p_;
+      p_ = o.p_;
+      if (p_)
+        ++p_->refcount;
+    }
+    return *this;
+  }
+
+  Tensor &operator=(Tensor &&o) noexcept {
+    if (this != &o) {
+      if (p_ && --p_->refcount == 0)
+        delete p_;
+      p_ = o.p_;
+      if (p_)
+        ++p_->refcount;
+    }
+    return *this;
+  }
+
   Tensor(const Tensor &o) : p_(o.p_) { ++p_->refcount; }
+  Tensor(Tensor &&o) : p_(o.p_) { ++p_->refcount; }
 
   ~Tensor() {
     if (p_ && --p_->refcount == 0)
