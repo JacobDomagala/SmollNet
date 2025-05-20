@@ -6,6 +6,9 @@
 #include <cstring>
 #include <cuda_runtime.h>
 
+#include <fmt/core.h>
+#include <fmt/ranges.h>
+
 namespace smollnet {
 
 Storage::~Storage() {
@@ -20,10 +23,16 @@ Storage::~Storage() {
 Tensor Tensor::sum(int64_t dim) { return ::smollnet::sum(*this, dim); }
 
 Tensor Tensor::add(Tensor &other) {
-  assert(p_->dtype == other.impl()->dtype);
-  assert(p_->sizes == other.impl()->sizes);
-  assert(p_->elems == other.impl()->elems);
-  assert(p_->ndim == other.impl()->ndim);
+  ASSERT(p_->dtype == other.impl()->dtype,
+         fmt::format("{} vs {}\n", get_name(p_->dtype),
+                     get_name(other.impl()->dtype))
+             .c_str());
+  ASSERT(p_->sizes == other.impl()->sizes,
+         fmt::format("{} vs {}\n", p_->sizes, other.impl()->sizes).c_str());
+  ASSERT(p_->elems == other.impl()->elems,
+         fmt::format("{} vs {}\n", p_->elems, other.impl()->elems).c_str());
+  ASSERT(p_->ndim == other.impl()->ndim,
+         fmt::format("{} vs {}\n", p_->ndim, other.impl()->ndim).c_str());
 
   auto new_tensor =
       empty(p_->sizes.data(), p_->ndim, p_->dtype, p_->storage->device);
@@ -97,13 +106,38 @@ Tensor Tensor::cpu() {
 
 Tensor matmul(Tensor &l, Tensor &r) {
   // Check dims
-  assert(l.dims().size() == r.dims().size());
+  ASSERT(l.dims().size() == r.dims().size(),
+         fmt::format("{} vs {}\n", l.dims().size(), r.dims().size()).c_str());
   assert(l.dims()[1] == r.dims()[0]);
 
   Tensor new_tensor = empty({l.dims()[0], r.dims()[1]}, l.dtype(), l.device());
 
   launch_matmul(new_tensor.data(), l.data(), r.data(), l.dims().data(),
                 r.dims().data(), new_tensor.numel());
+
+  return new_tensor;
+}
+
+Tensor relu(Tensor &t) {
+  Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device());
+
+  launch_relu(new_tensor.data(), t.data(), t.numel());
+
+  return new_tensor;
+}
+
+Tensor tanh(Tensor &t) {
+  Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device());
+
+  launch_tanh(new_tensor.data(), t.data(), t.numel());
+
+  return new_tensor;
+}
+
+Tensor sigmoid(Tensor &t) {
+  Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device());
+
+  launch_sigmoid(new_tensor.data(), t.data(), t.numel());
 
   return new_tensor;
 }

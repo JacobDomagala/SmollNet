@@ -129,6 +129,9 @@ public:
   Tensor cpu();
 };
 
+Tensor relu(Tensor &t);
+Tensor tanh(Tensor &t);
+Tensor sigmoid(Tensor &t);
 Tensor matmul(Tensor &l, Tensor &r);
 
 Tensor sum(Tensor &t, int64_t dim);
