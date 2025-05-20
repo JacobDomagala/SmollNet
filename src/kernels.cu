@@ -196,4 +196,20 @@ void launch_matmul(void *out, void *left, void *right, int64_t ldims[3],
   CHECK_CUDA(cudaGetLastError());
 }
 
+__global__
+void relu_kernel(float* out, float* in, size_t total) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if(idx < total) out[idx] = max(in[idx], 0.0f);
+}
+
+void launch_relu(void* out, void* in, size_t total) {
+
+   int block = 256;
+   int grid = (total + block - 1) / block;
+
+   relu_kernel<<<grid, block>>>(static_cast<float *>(out), static_cast<float *>(in), total);
+   CHECK_CUDA(cudaGetLastError());
+}
+
 } // namespace smollnet

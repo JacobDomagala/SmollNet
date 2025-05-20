@@ -32,7 +32,7 @@ struct Linear : Module {
 };
 
 struct ReLU : Module {
-  Tensor forward(Tensor &t) override { return t; }
+  Tensor forward(Tensor &t) override { return relu(t); }
   void print() const override {
     printf("ReLU\n");
   }

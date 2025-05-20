@@ -16,4 +16,6 @@ void launch_sum_dim2(void *out, void *in, int64_t d0, int64_t d1, int64_t d2);
 void launch_matmul(void *out, void *left, void *right, int64_t ldims[3],
                    int64_t rdims[3], size_t total);
 
+void launch_relu(void* out, void* in, size_t total);
+
 } // namespace smollnet

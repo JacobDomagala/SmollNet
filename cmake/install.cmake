@@ -1,6 +1,7 @@
 include(GNUInstallDirs)
 
 set(SMOLLNET_CUDA_ROOT "${CUDAToolkit_ROOT}")
+set(SMOLLNET_FMT_ROOT "${fmt_DIR}")
 
 install(TARGETS ${PROJECT_NAME}
         EXPORT SmollNetTargets

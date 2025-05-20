@@ -3,11 +3,19 @@
 #include <cstdlib>
 
 namespace smollnet {
-    #define CHECK_CUDA(call) { \
-    cudaError_t err = call; \
-    if (err != cudaSuccess) { \
-        fprintf(stderr, "CUDA error at %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
-        exit(EXIT_FAILURE); \
-    } \
-}
-}
+#define ASSERT(expr, message)                                                  \
+  {                                                                            \
+    if (!(expr)) {                                                             \
+      fprintf(stderr, "Assertion fail at %s:%d: %s\n", __FILE__, __LINE__,     \
+              message);                                                        \
+      exit(EXIT_FAILURE);                                                      \
+    }                                                                          \
+  }
+
+#define CHECK_CUDA(call)                                                       \
+  {                                                                            \
+    cudaError_t err = call;                                                    \
+    ASSERT((err == cudaSuccess), cudaGetErrorString(err));                     \
+  }
+
+} // namespace smollnet
