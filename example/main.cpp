@@ -48,4 +48,5 @@ int main() {
   CHECK_CUDA(cudaDeviceSynchronize());
 
   auto net = Dense(Linear(32, 12), ReLU(), Linear(12,1));
+  net.print();
 }
