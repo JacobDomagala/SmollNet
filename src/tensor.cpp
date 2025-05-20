@@ -27,9 +27,12 @@ Tensor Tensor::add(Tensor &other) {
          fmt::format("{} vs {}\n", get_name(p_->dtype),
                      get_name(other.impl()->dtype))
              .c_str());
-  ASSERT(p_->sizes == other.impl()->sizes, fmt::format("{} vs {}\n", p_->sizes, other.impl()->sizes).c_str());
-  ASSERT(p_->elems == other.impl()->elems, fmt::format("{} vs {}\n", p_->elems, other.impl()->elems).c_str());
-  ASSERT(p_->ndim == other.impl()->ndim, fmt::format("{} vs {}\n", p_->ndim, other.impl()->ndim).c_str());
+  ASSERT(p_->sizes == other.impl()->sizes,
+         fmt::format("{} vs {}\n", p_->sizes, other.impl()->sizes).c_str());
+  ASSERT(p_->elems == other.impl()->elems,
+         fmt::format("{} vs {}\n", p_->elems, other.impl()->elems).c_str());
+  ASSERT(p_->ndim == other.impl()->ndim,
+         fmt::format("{} vs {}\n", p_->ndim, other.impl()->ndim).c_str());
 
   auto new_tensor =
       empty(p_->sizes.data(), p_->ndim, p_->dtype, p_->storage->device);
@@ -127,6 +130,14 @@ Tensor tanh(Tensor &t) {
   Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device());
 
   launch_tanh(new_tensor.data(), t.data(), t.numel());
+
+  return new_tensor;
+}
+
+Tensor sigmoid(Tensor &t) {
+  Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device());
+
+  launch_sigmoid(new_tensor.data(), t.data(), t.numel());
 
   return new_tensor;
 }

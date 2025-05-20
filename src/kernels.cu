@@ -196,37 +196,55 @@ void launch_matmul(void *out, void *left, void *right, int64_t ldims[3],
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__
-void relu_kernel(float* out, float* in, size_t total) {
+__global__ void relu_kernel(float *out, float *in, size_t total) {
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
 
-  if(idx < total) out[idx] = max(in[idx], 0.0f);
+  if (idx < total)
+    out[idx] = max(in[idx], 0.0f);
 }
 
-void launch_relu(void* out, void* in, size_t total) {
+void launch_relu(void *out, void *in, size_t total) {
 
-   int block = 256;
-   int grid = (total + block - 1) / block;
+  int block = 256;
+  int grid = (total + block - 1) / block;
 
-   relu_kernel<<<grid, block>>>(static_cast<float *>(out), static_cast<float *>(in), total);
-   CHECK_CUDA(cudaGetLastError());
+  relu_kernel<<<grid, block>>>(static_cast<float *>(out),
+                               static_cast<float *>(in), total);
+  CHECK_CUDA(cudaGetLastError());
 }
 
-
-__global__
-void tanh_kernel(float* out, float* in, size_t total) {
+__global__ void tanh_kernel(float *out, float *in, size_t total) {
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
 
-  if(idx < total) out[idx] = tanhf(in[idx]);
+  if (idx < total)
+    out[idx] = tanhf(in[idx]);
 }
 
-void launch_tanh(void* out, void* in, size_t total) {
+void launch_tanh(void *out, void *in, size_t total) {
 
-   int block = 256;
-   int grid = (total + block - 1) / block;
+  int block = 256;
+  int grid = (total + block - 1) / block;
 
-   tanh_kernel<<<grid, block>>>(static_cast<float *>(out), static_cast<float *>(in), total);
-   CHECK_CUDA(cudaGetLastError());
+  tanh_kernel<<<grid, block>>>(static_cast<float *>(out),
+                               static_cast<float *>(in), total);
+  CHECK_CUDA(cudaGetLastError());
 }
 
+__global__ void sigmoid_kernel(float *output, float *input, int size) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < size) {
+    output[idx] =
+        1.0f / (1.0f + expf(-input[idx])); // Apply sigmoid to each element
+  }
+}
+
+void launch_sigmoid(void *out, void *in, size_t total) {
+
+  int block = 256;
+  int grid = (total + block - 1) / block;
+
+  sigmoid_kernel<<<grid, block>>>(static_cast<float *>(out),
+                                  static_cast<float *>(in), total);
+  CHECK_CUDA(cudaGetLastError());
+}
 } // namespace smollnet
