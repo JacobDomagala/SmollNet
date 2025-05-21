@@ -6,6 +6,10 @@ on:
       - main
   pull_request:
 
+permissions:
+  pull-requests: write
+  contents: read
+
 jobs:
   build:
     runs-on: self-hosted
@@ -15,12 +19,12 @@ jobs:
 
     - name: Run Script
       shell: bash
-      run: |
-        ./build.sh
+      run: ./build.sh
 
     - name: Post PR comment for warnings/errors
       if: ${{ always() }} && github.ref != 'refs/heads/main'
       uses: JacobDomagala/CompileResultAction@master
       with:
+        token: ${{ secrets.GITHUB_TOKEN }}
         comment_title: UBUNTU COMPILE RESULT
-        compile_result_file: ${{runner.workspace}}/build/output.txt
+        compile_result_file: ${{ github.workspace }}/build/output.txt

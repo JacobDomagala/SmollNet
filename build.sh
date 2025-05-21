@@ -28,7 +28,7 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   --preset ${CONAN_PRESET} \
   --fresh
 
-cmake --build "$BUILD" --target install
+cmake --build "$BUILD" --target install > "$BUILD/output.txt"
 
 SOURCE=/home/jdomagala/Work/SmollNet/example
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
@@ -38,4 +38,4 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   --fresh
 
-cmake --build "$BUILD"
+cmake --build "$BUILD" >> "$BUILD/output.txt"
