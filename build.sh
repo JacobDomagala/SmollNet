@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -e
+if [ -z "$1" ]; then
+  echo "Usage: $0 path/to/source"
+  exit 1
+fi
 
-SOURCE=/home/jdomagala/Work/SmollNet
+SOURCE="$1"
 BUILD=$SOURCE/build
 
 CUDA=/usr/local/cuda-12.8
@@ -30,7 +34,7 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
 
 cmake --build "$BUILD" --target install > "$BUILD/output.txt"
 
-SOURCE=/home/jdomagala/Work/SmollNet/example
+SOURCE=$SOURCE/example
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
   -DCMAKE_CXX_COMPILER="$CLANG/clang++" \
