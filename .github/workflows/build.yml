@@ -1,0 +1,30 @@
+name: Ubuntu
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Run Script
+      shell: bash
+      run: ./build.sh $(pwd)
+
+    - name: Post PR comment for warnings/errors
+      if: ${{ always() }} && github.ref != 'refs/heads/main'
+      uses: JacobDomagala/CompileResultAction@master
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        comment_title: UBUNTU COMPILE RESULT
+        compile_result_file: ${{ github.workspace }}/build/output.txt
