@@ -97,6 +97,7 @@ TensorImpl *Tensor::impl() const noexcept {
 }
 
 bool Tensor::requires_grad() const noexcept { return impl()->requires_grad; }
+AutogradMeta* Tensor::grad() const noexcept { return impl()->grad; }
 int64_t Tensor::size(int d) const noexcept { return impl()->sizes[d]; }
 int64_t Tensor::ndims() const noexcept { return impl()->ndim; }
 Device Tensor::device() const noexcept { return impl()->storage->device; }

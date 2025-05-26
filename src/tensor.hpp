@@ -56,6 +56,7 @@ Tensor() = default;
   TensorImpl *impl() const noexcept;
 
   bool requires_grad() const noexcept;
+  AutogradMeta* grad() const noexcept;
   int64_t size(int d) const noexcept;
   int64_t ndims() const noexcept;
   Device device() const noexcept;
