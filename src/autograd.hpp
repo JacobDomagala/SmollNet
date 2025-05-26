@@ -26,12 +26,8 @@ struct Function {
 struct AutogradMeta {
   std::shared_ptr<Function> grad_fn = nullptr;
   Tensor grad;
-  bool requires_grad = false;
   bool is_leaf = true;
   int refcount = 1;
-
-  AutogradMeta() = default;
-  explicit AutogradMeta(bool requires_grad) : requires_grad(requires_grad) {}
 };
 
 // Specific function implementations
@@ -95,6 +91,6 @@ private:
 // Autograd engine functions
 void backward(Tensor &tensor, const Tensor &grad_output = Tensor());
 bool any_requires_grad(const std::vector<Tensor> &tensors);
-Tensor create_grad_tensor(const Tensor &tensor, bool requires_grad = false);
+Tensor create_grad_tensor(const Tensor &tensor);
 
 } // namespace smollnet

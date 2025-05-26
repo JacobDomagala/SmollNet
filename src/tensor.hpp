@@ -42,7 +42,7 @@ class Tensor {
   TensorImpl *p_ = nullptr;
 
 public:
-Tensor() = default;
+  Tensor();
   explicit Tensor(TensorImpl *p);
 
   Tensor &operator=(const Tensor &o) noexcept;
@@ -53,10 +53,14 @@ Tensor() = default;
 
   ~Tensor();
 
+  bool initialized() const noexcept;
   TensorImpl *impl() const noexcept;
 
+  void backward(const Tensor& grad_output = Tensor());
+  void zero_grad();
   bool requires_grad() const noexcept;
-  AutogradMeta* grad() const noexcept;
+  Tensor grad() const noexcept;
+  AutogradMeta* autograd() const noexcept;
   int64_t size(int d) const noexcept;
   int64_t ndims() const noexcept;
   Device device() const noexcept;
@@ -94,33 +98,33 @@ Tensor operator+(Tensor &l, Tensor &r);
 Tensor operator-(Tensor &l, Tensor &r);
 
 // Create functions
-Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d);
-Tensor zeros(const int64_t *dims, size_t rank, DataType t, Device d);
-Tensor ones(const int64_t *dims, size_t rank, DataType t, Device d);
-Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d);
+Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d, bool requires_grad = false);
+Tensor zeros(const int64_t *dims, size_t rank, DataType t, Device d, bool requires_grad = false);
+Tensor ones(const int64_t *dims, size_t rank, DataType t, Device d, bool requires_grad = false);
+Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d, bool requires_grad = false);
 
 template <size_t N>
-Tensor empty(const int64_t (&dims)[N], DataType t, Device d) {
+Tensor empty(const int64_t (&dims)[N], DataType t, Device d, bool requires_grad = false) {
   static_assert(N <= 3, "We don't support more than 3 dimensional Tensors");
-  return empty(dims, N, t, d);
+  return empty(dims, N, t, d, requires_grad);
 }
 
 template <size_t N>
-Tensor zeros(const int64_t (&dims)[N], DataType t, Device d) {
+Tensor zeros(const int64_t (&dims)[N], DataType t, Device d, bool requires_grad = false) {
   static_assert(N <= 3, "We don't support more than 3 dimensional Tensors");
-  return zeros(dims, N, t, d);
+  return zeros(dims, N, t, d, requires_grad);
 }
 
 template <size_t N>
-Tensor ones(const int64_t (&dims)[N], DataType t, Device d) {
+Tensor ones(const int64_t (&dims)[N], DataType t, Device d, bool requires_grad = false) {
   static_assert(N <= 3, "We don't support more than 3 dimensional Tensors");
-  return ones(dims, N, t, d);
+  return ones(dims, N, t, d, requires_grad);
 }
 
 template <size_t N>
-Tensor rand(const int64_t (&dims)[N], DataType t, Device d) {
+Tensor rand(const int64_t (&dims)[N], DataType t, Device d, bool requires_grad = false) {
   static_assert(N <= 3, "We don't support more than 3 dimensional Tensors");
-  return rand(dims, N, t, d);
+  return rand(dims, N, t, d, requires_grad);
 }
 
 } // namespace smollnet

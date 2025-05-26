@@ -9,6 +9,8 @@ find_package(fmt REQUIRED)
 
 add_library(${PROJECT_NAME}
     src/tensor.cpp
+    src/neuralnet.cpp
+    src/autograd.cpp
     src/kernels.cu
 )
 
@@ -19,5 +21,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 target_link_libraries(${PROJECT_NAME} PUBLIC CUDA::cudart fmt::fmt)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_23 cuda_std_20)
+target_compile_options(${PROJECT_NAME} PUBLIC -g -lineinfo)
 
 include(cmake/install.cmake)

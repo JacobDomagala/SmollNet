@@ -9,8 +9,7 @@ namespace smollnet {
 // Helper function to check if any tensor requires grad
 bool any_requires_grad(const std::vector<Tensor> &tensors) {
   for (const auto &tensor : tensors) {
-    if (tensor.impl() && tensor.impl()->grad &&
-        static_cast<AutogradMeta *>(tensor.impl()->grad)->requires_grad) {
+    if (tensor.impl() && tensor.impl()->requires_grad) {
       return true;
     }
   }
@@ -18,27 +17,16 @@ bool any_requires_grad(const std::vector<Tensor> &tensors) {
 }
 
 // Create a gradient tensor with the same shape as input
-Tensor create_grad_tensor(const Tensor &tensor, bool requires_grad) {
-  auto grad = zeros(tensor.dims().data(), tensor.ndims(), tensor.dtype(),
-                    tensor.device());
-  if (requires_grad && grad.impl()) {
-    if (!grad.impl()->grad) {
-      grad.impl()->grad = new AutogradMeta(false);
-    }
-    static_cast<AutogradMeta *>(grad.impl()->grad)->requires_grad = false;
-    static_cast<AutogradMeta *>(grad.impl()->grad)->is_leaf = true;
-  }
-  return grad;
+Tensor create_grad_tensor(const Tensor &tensor) {
+  return zeros(tensor.dims().data(), tensor.ndims(), tensor.dtype(),
+               tensor.device());
 }
 
 // AddFunction implementation
 AddFunction::AddFunction(const Tensor &lhs, const Tensor &rhs) {
   inputs = {lhs, rhs};
-  needs_input_grad = {
-      lhs.impl() && lhs.impl()->grad &&
-          static_cast<AutogradMeta *>(lhs.impl()->grad)->requires_grad,
-      rhs.impl() && rhs.impl()->grad &&
-          static_cast<AutogradMeta *>(rhs.impl()->grad)->requires_grad};
+  needs_input_grad = {lhs.impl() && lhs.requires_grad(),
+                      rhs.impl() && rhs.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -49,13 +37,13 @@ AddFunction::backward(const std::vector<Tensor> &grad_outputs) {
   std::vector<Tensor> grad_inputs(2);
 
   if (needs_input_grad[0]) {
-    grad_inputs[0] =
-        grad_outputs[0]; // Gradient w.r.t. lhs is just the incoming gradient
+    // Gradient w.r.t. lhs is just the incoming gradient
+    grad_inputs[0] = grad_outputs[0];
   }
 
   if (needs_input_grad[1]) {
-    grad_inputs[1] =
-        grad_outputs[0]; // Gradient w.r.t. rhs is just the incoming gradient
+    // Gradient w.r.t. rhs is just the incoming gradient
+    grad_inputs[1] = grad_outputs[0];
   }
 
   return grad_inputs;
@@ -64,11 +52,8 @@ AddFunction::backward(const std::vector<Tensor> &grad_outputs) {
 // SubFunction implementation
 SubFunction::SubFunction(const Tensor &lhs, const Tensor &rhs) {
   inputs = {lhs, rhs};
-  needs_input_grad = {
-      lhs.impl() && lhs.impl()->grad &&
-          static_cast<AutogradMeta *>(lhs.impl()->grad)->requires_grad,
-      rhs.impl() && rhs.impl()->grad &&
-          static_cast<AutogradMeta *>(rhs.impl()->grad)->requires_grad};
+  needs_input_grad = {lhs.impl() && lhs.requires_grad(),
+                      rhs.impl() && rhs.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -79,8 +64,8 @@ SubFunction::backward(const std::vector<Tensor> &grad_outputs) {
   std::vector<Tensor> grad_inputs(2);
 
   if (needs_input_grad[0]) {
-    grad_inputs[0] =
-        grad_outputs[0]; // Gradient w.r.t. lhs is the incoming gradient
+    // Gradient w.r.t. lhs is the incoming gradient
+    grad_inputs[0] = grad_outputs[0];
   }
 
   if (needs_input_grad[1]) {
@@ -88,6 +73,7 @@ SubFunction::backward(const std::vector<Tensor> &grad_outputs) {
     auto neg_grad =
         zeros(grad_outputs[0].dims().data(), grad_outputs[0].ndims(),
               grad_outputs[0].dtype(), grad_outputs[0].device());
+
     // TODO: Implement negate operation in kernels
     grad_inputs[1] = neg_grad.sub(const_cast<Tensor &>(grad_outputs[0]));
   }
@@ -100,11 +86,8 @@ MatmulFunction::MatmulFunction(const Tensor &lhs, const Tensor &rhs) {
   inputs = {lhs, rhs};
   lhs_shape = lhs.dims();
   rhs_shape = rhs.dims();
-  needs_input_grad = {
-      lhs.impl() && lhs.impl()->grad &&
-          static_cast<AutogradMeta *>(lhs.impl()->grad)->requires_grad,
-      rhs.impl() && rhs.impl()->grad &&
-          static_cast<AutogradMeta *>(rhs.impl()->grad)->requires_grad};
+  needs_input_grad = {lhs.impl() && lhs.requires_grad(),
+                      rhs.impl() && rhs.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -133,9 +116,7 @@ MatmulFunction::backward(const std::vector<Tensor> &grad_outputs) {
 // ReLUFunction implementation
 ReLUFunction::ReLUFunction(const Tensor &input) {
   inputs = {input};
-  needs_input_grad = {
-      input.impl() && input.impl()->grad &&
-      static_cast<AutogradMeta *>(input.impl()->grad)->requires_grad};
+  needs_input_grad = {input.impl() && input.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -159,9 +140,7 @@ ReLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
 // TanhFunction implementation
 TanhFunction::TanhFunction(const Tensor &input) {
   inputs = {input};
-  needs_input_grad = {
-      input.impl() && input.impl()->grad &&
-      static_cast<AutogradMeta *>(input.impl()->grad)->requires_grad};
+  needs_input_grad = {input.impl() && input.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -184,9 +163,7 @@ TanhFunction::backward(const std::vector<Tensor> &grad_outputs) {
 // SigmoidFunction implementation
 SigmoidFunction::SigmoidFunction(const Tensor &input) {
   inputs = {input};
-  needs_input_grad = {
-      input.impl() && input.impl()->grad &&
-      static_cast<AutogradMeta *>(input.impl()->grad)->requires_grad};
+  needs_input_grad = {input.impl() && input.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -210,9 +187,7 @@ SigmoidFunction::backward(const std::vector<Tensor> &grad_outputs) {
 SumFunction::SumFunction(const Tensor &input, int64_t dim) : dim_(dim) {
   inputs = {input};
   input_shape_ = input.dims();
-  needs_input_grad = {
-      input.impl() && input.impl()->grad &&
-      static_cast<AutogradMeta *>(input.impl()->grad)->requires_grad};
+  needs_input_grad = {input.impl() && input.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -237,13 +212,13 @@ SumFunction::backward(const std::vector<Tensor> &grad_outputs) {
 // Main backward function - implements reverse-mode automatic differentiation
 void backward(Tensor &tensor, const Tensor &grad_output) {
   ASSERT(tensor.impl(), "Cannot compute gradients for null tensor");
+  ASSERT(tensor.requires_grad(), "Tensor does not require gradients");
 
-  auto *meta = tensor.grad();
-  ASSERT(meta && meta->requires_grad, "Tensor does not require gradients");
+  auto *meta = tensor.autograd();
 
   // Initialize gradient if not provided
   Tensor grad;
-  if (grad_output.impl()) {
+  if (grad_output.initialized()) {
     grad = grad_output;
   } else {
     grad = ones(tensor.dims().data(), tensor.ndims(), tensor.dtype(),
@@ -271,7 +246,7 @@ void backward(Tensor &tensor, const Tensor &grad_output) {
       continue;
 
     // Accumulate gradient
-    if (!current_meta->grad.impl()) {
+    if (!current_meta->grad.initialized()) {
       current_meta->grad = current_grad;
     } else {
       current_meta->grad =

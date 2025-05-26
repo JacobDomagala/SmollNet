@@ -14,8 +14,8 @@ struct Module {
 
 struct Linear : Module {
   Linear(int64_t in_dim, int64_t out_dim) {
-    weights = rand({in_dim, out_dim}, DataType::f32, Device::CUDA);
-    bias = zeros({1, out_dim}, DataType::f32, Device::CUDA);
+    weights = rand({in_dim, out_dim}, DataType::f32, Device::CUDA, true);
+    bias = zeros({1, out_dim}, DataType::f32, Device::CUDA, true);
   }
   Tensor forward(Tensor &t) override { return matmul(t, weights).add(bias); }
   void print() const override {

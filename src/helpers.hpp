@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdlib>
+#include <cassert>
 
 namespace smollnet {
 #define ASSERT(expr, message)                                                  \
@@ -8,7 +9,7 @@ namespace smollnet {
     if (!(expr)) {                                                             \
       fprintf(stderr, "Assertion fail at %s:%d: %s\n", __FILE__, __LINE__,     \
               message);                                                        \
-      exit(EXIT_FAILURE);                                                      \
+      assert(false);                                                           \
     }                                                                          \
   }
 
