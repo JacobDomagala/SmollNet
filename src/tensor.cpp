@@ -1,4 +1,5 @@
 #include "tensor.hpp"
+#include "autograd.hpp"
 #include "helpers.hpp"
 #include "kernels.cuh"
 
@@ -11,6 +12,10 @@
 
 namespace smollnet {
 
+/*
+  STORAGE
+*/
+
 Storage::~Storage() {
   if (--refcount == 0) {
     if (device == Device::CUDA)
@@ -20,42 +25,139 @@ Storage::~Storage() {
   }
 }
 
+/*
+  TENSORIMPL
+*/
+
+TensorImpl::TensorImpl(const int64_t *dims, int64_t rank, DataType type) {
+  for (size_t d = 0; d < rank; ++d) {
+    sizes[d] = dims[d];
+    elems *= dims[d];
+  }
+
+  if (rank > 0) {
+    strides[rank - 1] = element_size(type);
+    for (int64_t i = rank - 2; i >= 0; --i) {
+      strides[i] = strides[i + 1] * sizes[i + 1];
+    }
+  }
+
+  ndim = rank;
+  dtype = type;
+}
+
+/*
+  TENSOR
+*/
+
+Tensor::Tensor(TensorImpl *p) : p_(p) {
+  if (p_)
+    ++p_->refcount;
+}
+
+Tensor &Tensor::operator=(const Tensor &o) noexcept {
+  if (this != &o) {
+    if (p_ && --p_->refcount == 0)
+      delete p_;
+    p_ = o.p_;
+    if (p_)
+      ++p_->refcount;
+  }
+  return *this;
+}
+
+Tensor &Tensor::operator=(Tensor &&o) noexcept {
+  if (this != &o) {
+    if (p_ && --p_->refcount == 0)
+      delete p_;
+    p_ = o.p_;
+    if (p_)
+      ++p_->refcount;
+  }
+  return *this;
+}
+
+Tensor::Tensor(const Tensor &o) : p_(o.p_) {
+  if (p_)
+    ++p_->refcount;
+}
+Tensor::Tensor(Tensor &&o) : p_(o.p_) {
+  if (p_)
+    ++p_->refcount;
+}
+
+Tensor::~Tensor() {
+  if (p_ && --p_->refcount == 0)
+    delete p_;
+}
+
+TensorImpl *Tensor::impl() const noexcept {
+  ASSERT(p_, "Trying to use uninitialized Tensor!");
+  return p_;
+}
+
+bool Tensor::requires_grad() const noexcept { return impl()->requires_grad; }
+int64_t Tensor::size(int d) const noexcept { return impl()->sizes[d]; }
+int64_t Tensor::ndims() const noexcept { return impl()->ndim; }
+Device Tensor::device() const noexcept { return impl()->storage->device; }
+DataType Tensor::dtype() const noexcept { return impl()->dtype; }
+
+void *Tensor::data() const noexcept {
+  return static_cast<char *>(p_->storage->ptr);
+}
+
+size_t Tensor::numel() const noexcept { return p_->elems; }
+
+std::array<int64_t, 3> Tensor::dims() const noexcept { return p_->sizes; }
+
+void Tensor::print() const noexcept {
+  auto &t = *impl();
+  printf("Tensor: [Refcount: %d Rank: %ld dim(%ld, %ld, %ld) strides(%ld, "
+         "%ld, %ld) "
+         "dtype:%s]\n\t Storage [Refcount: %d addr: %p]\n",
+         t.refcount, t.ndim, t.sizes[0], t.sizes[1], t.sizes[2], t.strides[0],
+         t.strides[1], t.strides[2], get_name(t.dtype), t.storage->refcount,
+         t.storage->ptr);
+}
+
 Tensor Tensor::sum(int64_t dim) { return ::smollnet::sum(*this, dim); }
 
 Tensor Tensor::add(Tensor &other) {
-  ASSERT(p_->dtype == other.impl()->dtype,
-         fmt::format("{} vs {}\n", get_name(p_->dtype),
+  auto &t = *impl();
+
+  ASSERT(t.dtype == other.impl()->dtype,
+         fmt::format("{} vs {}\n", get_name(t.dtype),
                      get_name(other.impl()->dtype))
              .c_str());
-  ASSERT(p_->sizes == other.impl()->sizes,
-         fmt::format("{} vs {}\n", p_->sizes, other.impl()->sizes).c_str());
-  ASSERT(p_->elems == other.impl()->elems,
-         fmt::format("{} vs {}\n", p_->elems, other.impl()->elems).c_str());
-  ASSERT(p_->ndim == other.impl()->ndim,
-         fmt::format("{} vs {}\n", p_->ndim, other.impl()->ndim).c_str());
+  ASSERT(t.sizes == other.impl()->sizes,
+         fmt::format("{} vs {}\n", t.sizes, other.impl()->sizes).c_str());
+  ASSERT(t.elems == other.impl()->elems,
+         fmt::format("{} vs {}\n", t.elems, other.impl()->elems).c_str());
+  ASSERT(t.ndim == other.impl()->ndim,
+         fmt::format("{} vs {}\n", t.ndim, other.impl()->ndim).c_str());
 
-  auto new_tensor =
-      empty(p_->sizes.data(), p_->ndim, p_->dtype, p_->storage->device);
+  auto new_tensor = empty(t.sizes.data(), t.ndim, t.dtype, t.storage->device);
 
   launch_add(static_cast<float *>(new_tensor.data()),
              static_cast<float *>(data()), static_cast<float *>(other.data()),
-             p_->elems);
+             t.elems);
 
   return new_tensor;
 }
 
 Tensor Tensor::sub(Tensor &other) {
-  assert(p_->dtype == other.impl()->dtype);
-  assert(p_->sizes == other.impl()->sizes);
-  assert(p_->elems == other.impl()->elems);
-  assert(p_->ndim == other.impl()->ndim);
+  auto &t = *impl();
 
-  auto new_tensor =
-      empty(p_->sizes.data(), p_->ndim, p_->dtype, p_->storage->device);
+  assert(t.dtype == other.impl()->dtype);
+  assert(t.sizes == other.impl()->sizes);
+  assert(t.elems == other.impl()->elems);
+  assert(t.ndim == other.impl()->ndim);
+
+  auto new_tensor = empty(t.sizes.data(), t.ndim, t.dtype, t.storage->device);
 
   launch_sub(static_cast<float *>(new_tensor.data()),
              static_cast<float *>(data()), static_cast<float *>(other.data()),
-             p_->elems);
+             t.elems);
 
   return new_tensor;
 }
@@ -103,6 +205,10 @@ Tensor Tensor::cpu() {
     return new_tensor;
   }
 }
+
+/*
+  FREE FUNCTIONS
+*/
 
 Tensor matmul(Tensor &l, Tensor &r) {
   // Check dims
