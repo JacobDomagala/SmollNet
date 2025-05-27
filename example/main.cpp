@@ -10,12 +10,13 @@ using namespace smollnet;
 
 int main() {
   // contents: uninitialized float32 on GPU
-  Tensor a = rand({1, 32}, DataType::f32, Device::CUDA);
+  Tensor a = rand({1, 128}, DataType::f32, Device::CUDA);
 
-  auto net = Dense(Linear(32, 12), ReLU(), Linear(12,1));
-  auto res = net.forward(a).cpu();
+  auto net = Dense(Linear(128, 64), ReLU(), Linear(64,1));
+  auto res = net.forward(a);
+  res.backward();
 
   res.print();
 
-  fmt::print("Final value: {}\n", *static_cast<float*>(res.data()));
+  fmt::print("Final value: {}\n", *static_cast<float*>(res.cpu().data()));
 }

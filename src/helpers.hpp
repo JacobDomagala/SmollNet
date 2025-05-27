@@ -1,14 +1,16 @@
 #pragma once
 
+#include <fmt/core.h>
+#include <cassert>
 #include <cstdlib>
 
 namespace smollnet {
 #define ASSERT(expr, message)                                                  \
   {                                                                            \
     if (!(expr)) {                                                             \
-      fprintf(stderr, "Assertion fail at %s:%d: %s\n", __FILE__, __LINE__,     \
-              message);                                                        \
-      exit(EXIT_FAILURE);                                                      \
+      fmt::print("Assertion fail at {}:{}: {}\n", __FILE__, __LINE__,          \
+                 message);                                                     \
+      assert(false);                                                           \
     }                                                                          \
   }
 

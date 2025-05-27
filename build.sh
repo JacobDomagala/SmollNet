@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -e
+
 if [ -z "$1" ]; then
-  echo "Usage: $0 path/to/source"
-  exit 1
+  SOURCE="$(pwd)"
+else
+  SOURCE="$1"
 fi
 
-SOURCE="$1"
 BUILD=$SOURCE/build
 
 CUDA=/usr/local/cuda-12.8
@@ -30,9 +31,9 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DCMAKE_INSTALL_PREFIX="$BUILD/smollnet" \
   --preset ${CONAN_PRESET} \
-  --fresh
+  --fresh | tee "$BUILD/output.txt"
 
-cmake --build "$BUILD" --target install > "$BUILD/output.txt"
+cmake --build "$BUILD" --target install | tee -a "$BUILD/output.txt"
 
 SOURCE=$SOURCE/example
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
@@ -40,6 +41,6 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_CXX_COMPILER="$CLANG/clang++" \
   -DSmollNet_ROOT=${BUILD}/smollnet \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-  --fresh
+  --fresh | tee -a "$BUILD/output.txt"
 
-cmake --build "$BUILD" >> "$BUILD/output.txt"
+cmake --build "$BUILD" | tee -a "$BUILD/output.txt"
