@@ -211,6 +211,35 @@ SumFunction::backward(const std::vector<Tensor> &grad_outputs) {
   return grad_inputs;
 }
 
+MseFunction::MseFunction(const Tensor &pred, const Tensor &tgt) {
+  inputs = {pred, tgt};
+  needs_input_grad = {pred.requires_grad(), tgt.requires_grad()};
+  dim_ = -1;
+  input_shape_ = pred.dims();
+}
+
+std::vector<Tensor>
+MseFunction::backward(const std::vector<Tensor> &grad_outputs) {
+  ASSERT(grad_outputs.size() == 1, "MseFunction expects one grad_output");
+  float go = *static_cast<float *>(grad_outputs[0].cpu().data()); // scalar
+  size_t n = inputs[0].numel();
+  float c = 2.0f * go / static_cast<float>(n);
+
+  std::vector<Tensor> g(2);
+
+  if (needs_input_grad[0]) {
+    g[0] = zeros(inputs[0].dims().data(), inputs[0].ndims(), inputs[0].dtype(),
+                 inputs[0].device());
+    launch_mse_grad(g[0].data(), inputs[0].data(), inputs[1].data(), c, n);
+  }
+  if (needs_input_grad[1]) {
+    g[1] = zeros(inputs[1].dims().data(), inputs[1].ndims(), inputs[1].dtype(),
+                 inputs[1].device());
+    launch_mse_grad(g[1].data(), inputs[1].data(), inputs[0].data(), -c, n);
+  }
+  return g;
+}
+
 // Main backward function - implements reverse-mode automatic differentiation
 void backward(Tensor &tensor, const Tensor &grad_output) {
   ASSERT(tensor.impl(), "Cannot compute gradients for null tensor");
@@ -261,11 +290,12 @@ void backward(Tensor &tensor, const Tensor &grad_output) {
 
     // Compute gradients for inputs if we have a gradient function
     if (current_meta->grad_fn) {
-      current_meta->grad_fn->print();
+      // current_meta->grad_fn->print();
       auto input_grads = current_meta->grad_fn->backward({current_grad});
 
       for (size_t i = 0; i < input_grads.size(); ++i) {
-        if (input_grads[i].initialized() && i < current_meta->grad_fn->inputs.size()) {
+        if (input_grads[i].initialized() &&
+            i < current_meta->grad_fn->inputs.size()) {
           ready_queue.push({current_meta->grad_fn->inputs[i], input_grads[i]});
         }
       }

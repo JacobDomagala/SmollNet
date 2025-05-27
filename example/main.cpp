@@ -9,12 +9,9 @@
 using namespace smollnet;
 
 int main() {
-  // contents: uninitialized float32 on GPU
-  Tensor a = rand({1, 128}, DataType::f32, Device::CUDA);
+  Tensor input = rand({1, 128}, DataType::f32, Device::CUDA);
+  Tensor targets = rand({1, 1}, DataType::f32, Device::CUDA);
 
   auto net = Dense(Linear(128, 64), ReLU(), Linear(64,1));
-  auto res = net.forward(a);
-  res.backward();
-
-  res.print_elms();
+  net.train(input, targets);
 }

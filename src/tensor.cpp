@@ -12,7 +12,8 @@
 
 namespace smollnet {
 
-template <typename GradF> void SetupAutograd(Tensor &l, Tensor &r, Tensor &n) {
+template <typename GradF>
+void SetupAutograd(Tensor const &l, Tensor const &r, Tensor const &n) {
   if (l.requires_grad() or r.requires_grad()) {
     auto *meta = n.autograd();
 
@@ -21,7 +22,8 @@ template <typename GradF> void SetupAutograd(Tensor &l, Tensor &r, Tensor &n) {
   }
 }
 
-template <typename GradF> void SetupAutograd(Tensor &n, Tensor &other) {
+template <typename GradF>
+void SetupAutograd(Tensor const &n, Tensor const &other) {
   if (other.requires_grad()) {
     auto *meta = n.autograd();
 
@@ -121,7 +123,7 @@ TensorImpl *Tensor::impl() const noexcept {
 void Tensor::backward(const Tensor &grad_output) {
   ::smollnet::backward(*this, grad_output);
 }
-void Tensor::zero_grad() {
+void Tensor::zero_grad() const {
   ASSERT(autograd(), "Tensor doesn't have gradient!");
 
   launch_fill(static_cast<float *>(grad().data()), grad().numel(), 0.0f);
@@ -153,24 +155,24 @@ void Tensor::print() const noexcept {
          t.storage->ptr);
 }
 
-void Tensor::print_elms() const noexcept{
+void Tensor::print_elms() const noexcept {
   // Could be expensive
   auto t = *cpu().impl();
 
   fmt::print("Tensor: [");
   // For now we print as contig memory, we can do pretty printing later
-  for(int i = 0; i < t.elems; ++i) {
-    fmt::print("{}, ", static_cast<float*>(t.storage->ptr)[i]);
+  for (int i = 0; i < t.elems; ++i) {
+    fmt::print("{}, ", static_cast<float *>(t.storage->ptr)[i]);
   }
 
   fmt::print("]\n");
 }
 
-Tensor Tensor::sum(int64_t dim) { return ::smollnet::sum(*this, dim); }
-Tensor Tensor::matmul(Tensor &other) {
+Tensor Tensor::sum(int64_t dim) const { return ::smollnet::sum(*this, dim); }
+Tensor Tensor::matmul(Tensor const &other) const {
   return ::smollnet::matmul(*this, other);
 }
-Tensor Tensor::add(Tensor &other) {
+Tensor Tensor::add(Tensor const &other) const {
   auto &t = *impl();
 
   ASSERT(t.dtype == other.impl()->dtype,
@@ -196,7 +198,7 @@ Tensor Tensor::add(Tensor &other) {
   return new_tensor;
 }
 
-Tensor Tensor::sub(Tensor &other) {
+Tensor Tensor::sub(Tensor const &other) const {
   auto &t = *impl();
 
   assert(t.dtype == other.impl()->dtype);
@@ -276,11 +278,26 @@ Tensor Tensor::cpu() const {
   }
 }
 
+Tensor Tensor::copy() const {
+  auto new_tensor =
+      empty(dims().data(), ndims(), dtype(), device(), requires_grad());
+
+  if (device() == Device::CUDA) {
+    CHECK_CUDA(cudaMemcpy(new_tensor.data(), data(),
+                          numel() * element_size(dtype()),
+                          cudaMemcpyDeviceToDevice));
+  } else {
+    memcpy(new_tensor.data(), data(), numel() * element_size(dtype()));
+  }
+
+  return new_tensor;
+}
+
 /*
   FREE FUNCTIONS
 */
 
-Tensor matmul(Tensor &l, Tensor &r) {
+Tensor matmul(Tensor const &l, Tensor const &r) {
   // Check dims
   ASSERT(l.dims().size() == r.dims().size(),
          fmt::format("{} vs {}", l.dims().size(), r.dims().size()));
@@ -333,7 +350,7 @@ Tensor sigmoid(Tensor &t) {
   return new_tensor;
 }
 
-Tensor sum(Tensor &t, int64_t dim) {
+Tensor sum(Tensor const &t, int64_t dim) {
   auto *src = t.impl();
   auto &dims = src->sizes;
   auto new_rank = src->ndim - 1;
@@ -365,12 +382,20 @@ Tensor sum(Tensor &t, int64_t dim) {
   return new_tensor;
 }
 
-Tensor mse(Tensor& pred, Tensor& target) {
+Tensor mse(Tensor const&pred, Tensor const&target) {
   ASSERT(pred.dims() == target.dims(), "");
   ASSERT(pred.size(0) == 1, "");
 
-  auto new_tensor = zeros(pred.dims().data(), static_cast<size_t>(pred.ndims()), pred.dtype(), pred.device(), true);
+  auto new_tensor = zeros(pred.dims().data(), static_cast<size_t>(pred.ndims()),
+                          pred.dtype(), pred.device(), true);
   launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
+
+  if (any_requires_grad({pred, target})) {
+    new_tensor.impl()->requires_grad = true;
+    new_tensor.autograd()->is_leaf = false;
+    new_tensor.autograd()->grad_fn =
+        std::make_shared<MseFunction>(pred, target);
+  }
 
   return new_tensor;
 }

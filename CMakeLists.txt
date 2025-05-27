@@ -11,6 +11,7 @@ add_library(${PROJECT_NAME}
     src/tensor.cpp
     src/neuralnet.cpp
     src/autograd.cpp
+    src/sgd.cpp
     src/kernels.cu
 )
 

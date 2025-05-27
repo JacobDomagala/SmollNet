@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+
 namespace smollnet {
 
 void launch_fill(float *ptr, size_t numElems, float val);
@@ -26,6 +29,9 @@ void launch_tanh_grad(void *out, void *in, size_t total);
 void launch_sigmoid(void *out, void *in, size_t total);
 void launch_sigmoid_grad(void *out, void *in, size_t total);
 
-void launch_mse(void* out, void* pred, void* target, size_t total);
+void launch_mse(void *out, void *pred, void *target, size_t total);
+void launch_sgd_update(void *p, void *g, float lr, size_t total);
+void launch_mse_grad(void *grad, void *pred, void *target, float coeff,
+                     size_t total);
 
 } // namespace smollnet

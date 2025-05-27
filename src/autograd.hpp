@@ -88,6 +88,17 @@ private:
   std::array<int64_t, 3> input_shape_;
 };
 
+struct MseFunction : Function {
+  MseFunction(const Tensor& pred, const Tensor& tgt);
+  std::vector<Tensor>
+  backward(const std::vector<Tensor> &grad_outputs) override;
+  void print() const override { printf("MseFunction\n"); }
+
+private:
+  int64_t dim_;
+  std::array<int64_t, 3> input_shape_;
+};
+
 // Autograd engine functions
 void backward(Tensor &tensor, const Tensor &grad_output = Tensor());
 bool any_requires_grad(const std::vector<Tensor> &tensors);
