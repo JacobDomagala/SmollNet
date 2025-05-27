@@ -153,6 +153,19 @@ void Tensor::print() const noexcept {
          t.storage->ptr);
 }
 
+void Tensor::print_elms() const noexcept{
+  // Could be expensive
+  auto t = *cpu().impl();
+
+  fmt::print("Tensor: [");
+  // For now we print as contig memory, we can do pretty printing later
+  for(int i = 0; i < t.elems; ++i) {
+    fmt::print("{}, ", static_cast<float*>(t.storage->ptr)[i]);
+  }
+
+  fmt::print("]\n");
+}
+
 Tensor Tensor::sum(int64_t dim) { return ::smollnet::sum(*this, dim); }
 Tensor Tensor::matmul(Tensor &other) {
   return ::smollnet::matmul(*this, other);
@@ -223,7 +236,7 @@ Tensor Tensor::transpose(int d0, int d1) const {
   return Tensor(view);
 }
 
-Tensor Tensor::cuda() {
+Tensor Tensor::cuda() const {
   if (this->device() == Device::CUDA) {
     return Tensor(*this);
   } else {
@@ -243,7 +256,7 @@ Tensor Tensor::cuda() {
   }
 }
 
-Tensor Tensor::cpu() {
+Tensor Tensor::cpu() const {
   if (this->device() == Device::CPU) {
     return Tensor(*this);
   } else {
@@ -349,6 +362,16 @@ Tensor sum(Tensor &t, int64_t dim) {
     // dim==2
     launch_sum_dim2(dst, srcp, src->sizes[0], src->sizes[1], src->sizes[2]);
   }
+  return new_tensor;
+}
+
+Tensor mse(Tensor& pred, Tensor& target) {
+  ASSERT(pred.dims() == target.dims(), "");
+  ASSERT(pred.size(0) == 1, "");
+
+  auto new_tensor = zeros(pred.dims().data(), static_cast<size_t>(pred.ndims()), pred.dtype(), pred.device(), true);
+  launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
+
   return new_tensor;
 }
 

@@ -226,11 +226,9 @@ void launch_relu_grad(void *out, void *in, size_t total) {
   int grid = (total + block - 1) / block;
 
   relu_grad_kernel<<<grid, block>>>(static_cast<float *>(out),
-                               static_cast<float *>(in), total);
+                                    static_cast<float *>(in), total);
   CHECK_CUDA(cudaGetLastError());
 }
-
-
 
 __global__ void tanh_kernel(float *out, float *in, size_t total) {
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -262,7 +260,7 @@ void launch_tanh_grad(void *out, void *in, size_t total) {
   int grid = (total + block - 1) / block;
 
   tanh_grad_kernel<<<grid, block>>>(static_cast<float *>(out),
-                               static_cast<float *>(in), total);
+                                    static_cast<float *>(in), total);
   CHECK_CUDA(cudaGetLastError());
 }
 
@@ -287,8 +285,7 @@ void launch_sigmoid(void *out, void *in, size_t total) {
 __global__ void sigmoid_grad_kernel(float *output, float *input, int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < size) {
-    output[idx] =
-        input[idx] * (1.0f - input[idx]);
+    output[idx] = input[idx] * (1.0f - input[idx]);
   }
 }
 
@@ -298,7 +295,47 @@ void launch_sigmoid_grad(void *out, void *in, size_t total) {
   int grid = (total + block - 1) / block;
 
   sigmoid_grad_kernel<<<grid, block>>>(static_cast<float *>(out),
-                                  static_cast<float *>(in), total);
+                                       static_cast<float *>(in), total);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void mse_square_kernel(float *out, float *pred, float *target,
+                           size_t total) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (idx >= total)
+    return;
+
+  out[idx] = powf((pred[idx] - target[idx]), 2.0f);
+}
+
+__global__ void mse_sum_kernel(float* out, float* in, size_t N) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if(idx > 0) return;
+
+  float acc = 0.0f;
+  for(int i = 0; i < N; ++i) {
+    acc += in[i];
+  }
+
+  out[idx] = acc / N;
+}
+
+void launch_mse(void *out, void *pred, void *target, size_t total) {
+  int block = 256;
+  int grid = (total + block - 1) / block;
+
+  mse_square_kernel<<<grid, block>>>(static_cast<float *>(out),
+                              static_cast<float *>(pred),
+                              static_cast<float *>(target), total);
+
+  CHECK_CUDA(cudaGetLastError());
+
+  mse_sum_kernel<<<grid, block>>>(static_cast<float *>(out),
+                              static_cast<float *>(out), total);
+
+
   CHECK_CUDA(cudaGetLastError());
 }
 

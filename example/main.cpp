@@ -16,7 +16,5 @@ int main() {
   auto res = net.forward(a);
   res.backward();
 
-  res.print();
-
-  fmt::print("Final value: {}\n", *static_cast<float*>(res.cpu().data()));
+  res.print_elms();
 }

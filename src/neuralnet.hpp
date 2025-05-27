@@ -1,6 +1,7 @@
 #pragma once
 #include "tensor.hpp"
 
+#include <fmt/core.h>
 #include <memory>
 #include <vector>
 
@@ -54,6 +55,13 @@ public:
     return output;
   }
 
+  void train() const {
+    constexpr int num_epochs = 32;
+    for(int epoch = 0; epoch < num_epochs; ++epoch){
+      fmt::print("[{}]\n", epoch);
+    }
+  }
+
   void print() const noexcept{
     printf("Dense neural network [num_layers: %ld]\n", layers_.size());
     for(auto& layer : layers_){
@@ -63,7 +71,7 @@ public:
 
 private:
   std::vector<std::unique_ptr<Module>> layers_;
-  Device device_ = Device::CPU;
+  Device device_ = Device::CUDA;
   DataType dtype_ = DataType::f32;
 };
 

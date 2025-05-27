@@ -69,6 +69,7 @@ public:
   size_t numel() const noexcept;
   std::array<int64_t, 3> dims() const noexcept;
   void print() const noexcept;
+  void print_elms() const noexcept;
 
   Tensor add(Tensor &other);
   Tensor sub(Tensor &other);
@@ -77,8 +78,8 @@ public:
 
   Tensor transpose(int d0, int d1) const;
 
-  Tensor cuda();
-  Tensor cpu();
+  Tensor cuda() const;
+  Tensor cpu() const;
 };
 
 
@@ -97,6 +98,8 @@ Tensor sum(Tensor &t, int64_t dim);
 Tensor operator+(Tensor &l, Tensor &r);
 Tensor operator-(Tensor &l, Tensor &r);
 Tensor operator*(Tensor &l, Tensor &r);
+
+Tensor mse(Tensor& pred, Tensor& target);
 
 // Create functions
 Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d, bool requires_grad = false);

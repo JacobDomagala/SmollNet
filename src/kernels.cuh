@@ -26,4 +26,6 @@ void launch_tanh_grad(void *out, void *in, size_t total);
 void launch_sigmoid(void *out, void *in, size_t total);
 void launch_sigmoid_grad(void *out, void *in, size_t total);
 
+void launch_mse(void* out, void* pred, void* target, size_t total);
+
 } // namespace smollnet
