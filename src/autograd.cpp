@@ -122,20 +122,16 @@ ReLUFunction::ReLUFunction(const Tensor &input) {
 
 std::vector<Tensor>
 ReLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
-  ASSERT(grad_outputs.size() == 1,
-         "ReLUFunction expects exactly one gradient output");
-
-  std::vector<Tensor> grad_inputs(1);
-
-  if (needs_input_grad[0]) {
-    auto grad_input = create_grad_tensor(inputs[0]);
-    launch_relu_grad(grad_input.data(), grad_outputs.front().data(),
-                     grad_input.numel());
-
-    grad_inputs[0] = grad_input;
-  }
-
-  return grad_inputs;
+    ASSERT(grad_outputs.size() == 1, "ReLU backward expects 1 grad_output");
+    std::vector<Tensor> gi(1);
+    if (needs_input_grad[0]) {
+        gi[0] = create_grad_tensor(inputs[0]);
+        launch_relu_grad(gi[0].data(),          // grad_in
+                             grad_outputs[0].data(),          // grad_out
+                             inputs[0].data(),      // cached forward input
+                             gi[0].numel());
+    }
+    return gi;
 }
 
 // TanhFunction implementation
@@ -211,33 +207,26 @@ SumFunction::backward(const std::vector<Tensor> &grad_outputs) {
   return grad_inputs;
 }
 
-MseFunction::MseFunction(const Tensor &pred, const Tensor &tgt) {
-  inputs = {pred, tgt};
-  needs_input_grad = {pred.requires_grad(), tgt.requires_grad()};
-  dim_ = -1;
-  input_shape_ = pred.dims();
+MseFunction::MseFunction(const Tensor& p, const Tensor& t) {
+    inputs = {p, t};
+    needs_input_grad = {p.requires_grad(), t.requires_grad()};
+    N = p.numel();
 }
 
-std::vector<Tensor>
-MseFunction::backward(const std::vector<Tensor> &grad_outputs) {
-  ASSERT(grad_outputs.size() == 1, "MseFunction expects one grad_output");
-  float go = *static_cast<float *>(grad_outputs[0].cpu().data()); // scalar
-  size_t n = inputs[0].numel();
-  float c = 2.0f * go / static_cast<float>(n);
+std::vector<Tensor> MseFunction::backward(const std::vector<Tensor>& go) {
+    ASSERT(go.size() == 1, "MSE backward expects 1 grad_output (scalar)");
+    float c = *static_cast<float*>(go[0].cpu().data()) * (2.f / static_cast<float>(N));
 
-  std::vector<Tensor> g(2);
-
-  if (needs_input_grad[0]) {
-    g[0] = zeros(inputs[0].dims().data(), inputs[0].ndims(), inputs[0].dtype(),
-                 inputs[0].device());
-    launch_mse_grad(g[0].data(), inputs[0].data(), inputs[1].data(), c, n);
-  }
-  if (needs_input_grad[1]) {
-    g[1] = zeros(inputs[1].dims().data(), inputs[1].ndims(), inputs[1].dtype(),
-                 inputs[1].device());
-    launch_mse_grad(g[1].data(), inputs[1].data(), inputs[0].data(), -c, n);
-  }
-  return g;
+    std::vector<Tensor> gi(2);
+    if (needs_input_grad[0]) {
+        gi[0] = create_grad_tensor(inputs[0]);
+        launch_mse_grad(gi[0].data(), inputs[0].data(), inputs[1].data(),  c, N);
+    }
+    if (needs_input_grad[1]) {
+        gi[1] = create_grad_tensor(inputs[1]);
+        launch_mse_grad(gi[1].data(), inputs[1].data(), inputs[0].data(), -c, N);
+    }
+    return gi;
 }
 
 // Main backward function - implements reverse-mode automatic differentiation

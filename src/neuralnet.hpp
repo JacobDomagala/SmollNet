@@ -34,11 +34,13 @@ struct Linear : Module {
   }
 
   void gradient_update() const override {
-    launch_sgd_update(weights.data(), weights.grad().data(), 0.02,
-                      weights.numel());
-    weights.zero_grad();
+    if (weights.grad().initialized())
+      launch_sgd_update(weights.data(), weights.grad().data(), 0.02f,
+                        weights.numel());
+    if (bias.grad().initialized())
+      launch_sgd_update(bias.data(), bias.grad().data(), 0.02f, bias.numel());
 
-    launch_sgd_update(bias.data(), bias.grad().data(), 0.02, bias.numel());
+    weights.zero_grad();
     bias.zero_grad();
   }
 

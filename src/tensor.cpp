@@ -386,7 +386,7 @@ Tensor mse(Tensor const&pred, Tensor const&target) {
   ASSERT(pred.dims() == target.dims(), "");
   ASSERT(pred.size(0) == 1, "");
 
-  auto new_tensor = zeros(pred.dims().data(), static_cast<size_t>(pred.ndims()),
+  auto new_tensor = zeros({pred.size(0), pred.size(1) + 1},
                           pred.dtype(), pred.device(), true);
   launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
 

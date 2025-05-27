@@ -95,6 +95,7 @@ struct MseFunction : Function {
   void print() const override { printf("MseFunction\n"); }
 
 private:
+  size_t N;
   int64_t dim_;
   std::array<int64_t, 3> input_shape_;
 };
