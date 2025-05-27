@@ -96,6 +96,7 @@ Tensor matmul(Tensor &l, Tensor &r);
 Tensor sum(Tensor &t, int64_t dim);
 Tensor operator+(Tensor &l, Tensor &r);
 Tensor operator-(Tensor &l, Tensor &r);
+Tensor operator*(Tensor &l, Tensor &r);
 
 // Create functions
 Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d, bool requires_grad = false);

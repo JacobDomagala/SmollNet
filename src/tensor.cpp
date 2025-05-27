@@ -20,6 +20,16 @@ template <typename GradF> void SetupAutograd(Tensor &l, Tensor &r, Tensor &n) {
     meta->is_leaf = false;
   }
 }
+
+template <typename GradF> void SetupAutograd(Tensor &n, Tensor &other) {
+  if (other.requires_grad()) {
+    auto *meta = n.autograd();
+
+    meta->grad_fn = std::make_shared<GradF>(other);
+    meta->is_leaf = false;
+  }
+}
+
 /*
   STORAGE
 */
@@ -101,9 +111,7 @@ Tensor::~Tensor() {
     delete p_;
 }
 
-bool Tensor::initialized() const noexcept {
-  return p_;
-}
+bool Tensor::initialized() const noexcept { return p_; }
 
 TensorImpl *Tensor::impl() const noexcept {
   ASSERT(p_, "Trying to use uninitialized Tensor!");
@@ -146,7 +154,9 @@ void Tensor::print() const noexcept {
 }
 
 Tensor Tensor::sum(int64_t dim) { return ::smollnet::sum(*this, dim); }
-
+Tensor Tensor::matmul(Tensor &other) {
+  return ::smollnet::matmul(*this, other);
+}
 Tensor Tensor::add(Tensor &other) {
   auto &t = *impl();
 
@@ -260,8 +270,12 @@ Tensor Tensor::cpu() {
 Tensor matmul(Tensor &l, Tensor &r) {
   // Check dims
   ASSERT(l.dims().size() == r.dims().size(),
-         fmt::format("{} vs {}\n", l.dims().size(), r.dims().size()).c_str());
-  assert(l.dims()[1] == r.dims()[0]);
+         fmt::format("{} vs {}", l.dims().size(), r.dims().size()));
+  ASSERT(l.dims()[1] == r.dims()[0],
+         fmt::format("{} not equal to {}", l.dims()[1], r.dims()[0]));
+  ASSERT(l.device() == r.device(),
+         fmt::format("Device mismatch! {} and {}", get_device_name(l.device()),
+                     get_device_name(r.device())));
 
   bool needs_grad = any_requires_grad({l, r});
   Tensor new_tensor =
@@ -281,6 +295,8 @@ Tensor relu(Tensor &t) {
 
   launch_relu(new_tensor.data(), t.data(), t.numel());
 
+  SetupAutograd<ReLUFunction>(new_tensor, t);
+
   return new_tensor;
 }
 
@@ -289,6 +305,7 @@ Tensor tanh(Tensor &t) {
                             t.requires_grad());
 
   launch_tanh(new_tensor.data(), t.data(), t.numel());
+  SetupAutograd<TanhFunction>(new_tensor, t);
 
   return new_tensor;
 }
@@ -298,6 +315,7 @@ Tensor sigmoid(Tensor &t) {
                             t.requires_grad());
 
   launch_sigmoid(new_tensor.data(), t.data(), t.numel());
+  SetupAutograd<SigmoidFunction>(new_tensor, t);
 
   return new_tensor;
 }
@@ -336,6 +354,7 @@ Tensor sum(Tensor &t, int64_t dim) {
 
 Tensor operator+(Tensor &l, Tensor &r) { return l.add(r); }
 Tensor operator-(Tensor &l, Tensor &r) { return l.sub(r); }
+Tensor operator*(Tensor &l, Tensor &r) { return l.matmul(r); }
 
 Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
              bool requires_grad) {

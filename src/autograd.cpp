@@ -1,5 +1,6 @@
 #include "autograd.hpp"
 #include "helpers.hpp"
+#include "kernels.cuh"
 
 #include <queue>
 #include <unordered_set>
@@ -127,10 +128,10 @@ ReLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
   std::vector<Tensor> grad_inputs(1);
 
   if (needs_input_grad[0]) {
-    // ReLU derivative: 1 if x > 0, 0 otherwise
-    // TODO: Implement relu_backward kernel
     auto grad_input = create_grad_tensor(inputs[0]);
-    // For now, we'll approximate - this needs a proper kernel implementation
+    launch_relu_grad(grad_input.data(), grad_outputs.front().data(),
+                     grad_input.numel());
+
     grad_inputs[0] = grad_input;
   }
 
@@ -151,9 +152,9 @@ TanhFunction::backward(const std::vector<Tensor> &grad_outputs) {
   std::vector<Tensor> grad_inputs(1);
 
   if (needs_input_grad[0]) {
-    // tanh derivative: 1 - tanh^2(x)
-    // TODO: Implement tanh_backward kernel
     auto grad_input = create_grad_tensor(inputs[0]);
+    launch_tanh_grad(grad_input.data(), grad_outputs.front().data(),
+                     grad_input.numel());
     grad_inputs[0] = grad_input;
   }
 
@@ -174,9 +175,10 @@ SigmoidFunction::backward(const std::vector<Tensor> &grad_outputs) {
   std::vector<Tensor> grad_inputs(1);
 
   if (needs_input_grad[0]) {
-    // sigmoid derivative: sigmoid(x) * (1 - sigmoid(x))
-    // TODO: Implement sigmoid_backward kernel
+
     auto grad_input = create_grad_tensor(inputs[0]);
+    launch_sigmoid_grad(grad_input.data(), grad_outputs.front().data(),
+                        grad_input.numel());
     grad_inputs[0] = grad_input;
   }
 
@@ -259,10 +261,11 @@ void backward(Tensor &tensor, const Tensor &grad_output) {
 
     // Compute gradients for inputs if we have a gradient function
     if (current_meta->grad_fn) {
+      current_meta->grad_fn->print();
       auto input_grads = current_meta->grad_fn->backward({current_grad});
 
       for (size_t i = 0; i < input_grads.size(); ++i) {
-        if (input_grads[i].impl() && i < current_meta->grad_fn->inputs.size()) {
+        if (input_grads[i].initialized() && i < current_meta->grad_fn->inputs.size()) {
           ready_queue.push({current_meta->grad_fn->inputs[i], input_grads[i]});
         }
       }

@@ -21,6 +21,13 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 
 target_link_libraries(${PROJECT_NAME} PUBLIC CUDA::cudart fmt::fmt)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_23 cuda_std_20)
-target_compile_options(${PROJECT_NAME} PUBLIC -g -lineinfo)
+target_compile_options(${PROJECT_NAME}
+  PUBLIC
+    $<$<COMPILE_LANGUAGE:CUDA>:-G>
+    $<$<COMPILE_LANGUAGE:CUDA>:-g>
+    $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>
+    $<$<COMPILE_LANGUAGE:CXX>:-g>
+)
+
 
 include(cmake/install.cmake)
