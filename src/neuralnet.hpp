@@ -1,4 +1,5 @@
 #pragma once
+
 #include "tensor.hpp"
 
 #include <memory>
@@ -8,34 +9,30 @@ namespace smollnet {
 
 struct Module {
   virtual ~Module() = default;
-  virtual Tensor forward(Tensor &t) = 0;
+  virtual Tensor forward(Tensor &t) const = 0;
+  virtual void gradient_update() const = 0;
   virtual void print() const = 0;
+  virtual std::vector<Tensor> parameters() const = 0;
 };
 
 struct Linear : Module {
-  Linear(int64_t in_dim, int64_t out_dim) {
-    weights = rand({in_dim, out_dim}, DataType::f32, Device::CUDA, true);
-    bias = zeros({1, out_dim}, DataType::f32, Device::CUDA, true);
-  }
-  Tensor forward(Tensor &t) override { return matmul(t, weights).add(bias); }
-  void print() const override {
-    printf("Linear layer [\n\tWeights: ");
-    weights.print();
+  Linear(int64_t in_dim, int64_t out_dim);
 
-    printf("\tBias:");
-    bias.print();
-    printf("]\n");
-  }
+  Tensor forward(Tensor &t) const override;
+  std::vector<Tensor> parameters() const override;
+  void print() const override;
+
+  void gradient_update() const override;
 
   Tensor weights;
   Tensor bias;
 };
 
 struct ReLU : Module {
-  Tensor forward(Tensor &t) override { return relu(t); }
-  void print() const override {
-    printf("ReLU\n");
-  }
+  Tensor forward(Tensor &t) const override;
+  void gradient_update() const override;
+  void print() const override;
+  std::vector<Tensor> parameters() const override;
 };
 
 class Dense {
@@ -46,24 +43,18 @@ public:
      ...);
   }
 
-  Tensor forward(const Tensor &input) const {
-    Tensor output = input;
-    for(auto& layer : layers_){
-        output = layer->forward(output);
-    }
-    return output;
-  }
+  Tensor forward(const Tensor &input) const;
+  std::vector<Tensor> parameters() const;
 
-  void print() const noexcept{
-    printf("Dense neural network [num_layers: %ld]\n", layers_.size());
-    for(auto& layer : layers_){
-      layer->print();
-    }
-  }
+  void train(Tensor &input, Tensor &targets,
+             Optimizer optimizer = Optimizer::SGD, float lr = 0.0001f,
+             int32_t num_epochs = 32) const;
+
+  void print() const noexcept;
 
 private:
   std::vector<std::unique_ptr<Module>> layers_;
-  Device device_ = Device::CPU;
+  Device device_ = Device::CUDA;
   DataType dtype_ = DataType::f32;
 };
 

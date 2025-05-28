@@ -122,20 +122,16 @@ ReLUFunction::ReLUFunction(const Tensor &input) {
 
 std::vector<Tensor>
 ReLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
-  ASSERT(grad_outputs.size() == 1,
-         "ReLUFunction expects exactly one gradient output");
-
-  std::vector<Tensor> grad_inputs(1);
-
-  if (needs_input_grad[0]) {
-    auto grad_input = create_grad_tensor(inputs[0]);
-    launch_relu_grad(grad_input.data(), grad_outputs.front().data(),
-                     grad_input.numel());
-
-    grad_inputs[0] = grad_input;
-  }
-
-  return grad_inputs;
+    ASSERT(grad_outputs.size() == 1, "ReLU backward expects 1 grad_output");
+    std::vector<Tensor> gi(1);
+    if (needs_input_grad[0]) {
+        gi[0] = create_grad_tensor(inputs[0]);
+        launch_relu_grad(gi[0].data(),          // grad_in
+                             grad_outputs[0].data(),          // grad_out
+                             inputs[0].data(),      // cached forward input
+                             gi[0].numel());
+    }
+    return gi;
 }
 
 // TanhFunction implementation
@@ -211,6 +207,28 @@ SumFunction::backward(const std::vector<Tensor> &grad_outputs) {
   return grad_inputs;
 }
 
+MseFunction::MseFunction(const Tensor& p, const Tensor& t) {
+    inputs = {p, t};
+    needs_input_grad = {p.requires_grad(), t.requires_grad()};
+    N = p.numel();
+}
+
+std::vector<Tensor> MseFunction::backward(const std::vector<Tensor>& go) {
+    ASSERT(go.size() == 1, "MSE backward expects 1 grad_output (scalar)");
+    float c = *static_cast<float*>(go[0].cpu().data()) * (2.f / static_cast<float>(N));
+
+    std::vector<Tensor> gi(2);
+    if (needs_input_grad[0]) {
+        gi[0] = create_grad_tensor(inputs[0]);
+        launch_mse_grad(gi[0].data(), inputs[0].data(), inputs[1].data(),  c, N);
+    }
+    if (needs_input_grad[1]) {
+        gi[1] = create_grad_tensor(inputs[1]);
+        launch_mse_grad(gi[1].data(), inputs[1].data(), inputs[0].data(), -c, N);
+    }
+    return gi;
+}
+
 // Main backward function - implements reverse-mode automatic differentiation
 void backward(Tensor &tensor, const Tensor &grad_output) {
   ASSERT(tensor.impl(), "Cannot compute gradients for null tensor");
@@ -261,11 +279,12 @@ void backward(Tensor &tensor, const Tensor &grad_output) {
 
     // Compute gradients for inputs if we have a gradient function
     if (current_meta->grad_fn) {
-      current_meta->grad_fn->print();
+      // current_meta->grad_fn->print();
       auto input_grads = current_meta->grad_fn->backward({current_grad});
 
       for (size_t i = 0; i < input_grads.size(); ++i) {
-        if (input_grads[i].initialized() && i < current_meta->grad_fn->inputs.size()) {
+        if (input_grads[i].initialized() &&
+            i < current_meta->grad_fn->inputs.size()) {
           ready_queue.push({current_meta->grad_fn->inputs[i], input_grads[i]});
         }
       }

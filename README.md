@@ -16,4 +16,5 @@ Example usage:
     );
 
     auto res = model.forward(input);
+    res.backward();
 ```
