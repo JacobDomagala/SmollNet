@@ -333,7 +333,7 @@ void launch_mse(void *out, void *pred, void *target, size_t total) {
 
   CHECK_CUDA(cudaGetLastError());
 
-  mse_sum_kernel<<<grid, block>>>(static_cast<float *>(out) + total,
+  mse_sum_kernel<<<grid, block>>>(static_cast<float *>(out),
                                   static_cast<float *>(out), total);
 
   CHECK_CUDA(cudaGetLastError());

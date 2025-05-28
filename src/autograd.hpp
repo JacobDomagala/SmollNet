@@ -7,11 +7,9 @@
 
 namespace smollnet {
 
-// Forward declarations
 class Tensor;
 struct TensorImpl;
 
-// Function class for autograd operations
 struct Function {
   virtual ~Function() = default;
   virtual std::vector<Tensor>

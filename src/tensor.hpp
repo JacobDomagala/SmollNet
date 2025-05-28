@@ -4,20 +4,16 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
-
 #include <array>
 
 namespace smollnet {
 
-using Layout = int32_t;
 struct AutogradMeta;
 
 struct Storage {
   void *ptr = nullptr;
-  size_t bytes;
+  int refcount = 0;
   Device device;
-  int refcount = 1;
 
   ~Storage();
 };
@@ -26,20 +22,22 @@ struct TensorImpl {
   Storage *storage = nullptr;
   std::array<int64_t, 3> sizes = {0, 0, 0};
   std::array<int64_t, 3> strides = {0, 0, 0};
+
   size_t elems = 1;
   int64_t ndim;
+
   DataType dtype;
-  Layout layout;
   int refcount = 0;
 
   bool requires_grad = false;
   AutogradMeta *grad = nullptr;
 
   TensorImpl(const int64_t *dims, int64_t rank, DataType type);
+  ~TensorImpl();
 };
 
 class Tensor {
-  TensorImpl *p_ = nullptr;
+  TensorImpl *impl_ = nullptr;
 
 public:
   Tensor();
@@ -70,6 +68,7 @@ public:
   std::array<int64_t, 3> dims() const noexcept;
   void print() const noexcept;
   void print_elms() const noexcept;
+  size_t total_bytes() const noexcept;
 
   Tensor add(Tensor const &other) const;
   Tensor sub(Tensor const &other) const;

@@ -66,83 +66,111 @@ TensorImpl::TensorImpl(const int64_t *dims, int64_t rank, DataType type) {
   dtype = type;
 }
 
+TensorImpl::~TensorImpl() {
+  if (storage) {
+    delete storage;
+  }
+}
 /*
   TENSOR
 */
 
-Tensor::Tensor() : p_(nullptr) {}
+Tensor::Tensor() : impl_(nullptr) {}
 
-Tensor::Tensor(TensorImpl *p) : p_(p) {
-  if (p_)
-    ++p_->refcount;
+Tensor::Tensor(TensorImpl *p) : impl_(p) {
+  if (impl_) {
+    ++impl_->refcount;
+  }
 }
 
 Tensor &Tensor::operator=(const Tensor &o) noexcept {
   if (this != &o) {
-    if (p_ && --p_->refcount == 0)
-      delete p_;
-    p_ = o.p_;
-    if (p_)
-      ++p_->refcount;
+    if (impl_ && --impl_->refcount == 0) {
+      delete impl_;
+    }
+
+    impl_ = o.impl_;
+
+    if (impl_) {
+      ++impl_->refcount;
+    }
   }
+
   return *this;
 }
 
 Tensor &Tensor::operator=(Tensor &&o) noexcept {
   if (this != &o) {
-    if (p_ && --p_->refcount == 0)
-      delete p_;
-    p_ = o.p_;
-    if (p_)
-      ++p_->refcount;
+    if (impl_ && --impl_->refcount == 0) {
+      delete impl_;
+    }
+
+    impl_ = o.impl_;
+
+    if (impl_) {
+      ++impl_->refcount;
+    }
   }
+
   return *this;
 }
 
-Tensor::Tensor(const Tensor &o) : p_(o.p_) {
-  if (p_)
-    ++p_->refcount;
+Tensor::Tensor(const Tensor &o) : impl_(o.impl_) {
+  if (impl_) {
+    ++impl_->refcount;
+  }
 }
-Tensor::Tensor(Tensor &&o) : p_(o.p_) {
-  if (p_)
-    ++p_->refcount;
+
+Tensor::Tensor(Tensor &&o) : impl_(o.impl_) {
+  if (impl_) {
+    ++impl_->refcount;
+  }
 }
 
 Tensor::~Tensor() {
-  if (p_ && --p_->refcount == 0)
-    delete p_;
+  if (impl_ && --impl_->refcount == 0) {
+    delete impl_;
+  }
 }
 
-bool Tensor::initialized() const noexcept { return p_; }
+bool Tensor::initialized() const noexcept { return impl_; }
 
 TensorImpl *Tensor::impl() const noexcept {
-  ASSERT(p_, "Trying to use uninitialized Tensor!");
-  return p_;
+  ASSERT(impl_, "Trying to use uninitialized Tensor!");
+  return impl_;
 }
 
 void Tensor::backward(const Tensor &grad_output) {
   ::smollnet::backward(*this, grad_output);
 }
+
 void Tensor::zero_grad() const {
   ASSERT(autograd(), "Tensor doesn't have gradient!");
 
   launch_fill(static_cast<float *>(grad().data()), grad().numel(), 0.0f);
 }
+
 bool Tensor::requires_grad() const noexcept { return impl()->requires_grad; }
+
 Tensor Tensor::grad() const noexcept { return impl()->grad->grad; }
+
 AutogradMeta *Tensor::autograd() const noexcept { return impl()->grad; }
+
 int64_t Tensor::size(int d) const noexcept { return impl()->sizes[d]; }
+
 int64_t Tensor::ndims() const noexcept { return impl()->ndim; }
+
 Device Tensor::device() const noexcept { return impl()->storage->device; }
+
 DataType Tensor::dtype() const noexcept { return impl()->dtype; }
 
 void *Tensor::data() const noexcept {
-  return static_cast<char *>(p_->storage->ptr);
+  return static_cast<char *>(impl_->storage->ptr);
 }
 
-size_t Tensor::numel() const noexcept { return p_->elems; }
+size_t Tensor::numel() const noexcept { return impl_->elems; }
 
-std::array<int64_t, 3> Tensor::dims() const noexcept { return p_->sizes; }
+std::array<int64_t, 3> Tensor::dims() const noexcept { return impl_->sizes; }
 
 void Tensor::print() const noexcept {
   auto &t = *impl();
@@ -168,10 +196,16 @@ void Tensor::print_elms() const noexcept {
   fmt::print("]\n");
 }
 
+size_t Tensor::total_bytes() const noexcept {
+  return element_size(dtype()) * numel();
+}
+
 Tensor Tensor::sum(int64_t dim) const { return ::smollnet::sum(*this, dim); }
+
 Tensor Tensor::matmul(Tensor const &other) const {
   return ::smollnet::matmul(*this, other);
 }
+
 Tensor Tensor::add(Tensor const &other) const {
   auto &t = *impl();
 
@@ -382,17 +416,18 @@ Tensor sum(Tensor const &t, int64_t dim) {
   return new_tensor;
 }
 
-Tensor mse(Tensor const&pred, Tensor const&target) {
+Tensor mse(Tensor const &pred, Tensor const &target) {
   ASSERT(pred.dims() == target.dims(), "");
 
   // We don't support batching
   ASSERT(pred.size(0) == 1, "");
 
-  auto new_tensor = zeros({pred.size(0), pred.size(1) + 1},
-                          pred.dtype(), pred.device(), true);
+  bool requires_grad = any_requires_grad({pred, target});
+  auto new_tensor = zeros({pred.size(0), pred.size(1)}, pred.dtype(),
+                          pred.device(), requires_grad);
   launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
 
-  if (any_requires_grad({pred, target})) {
+  if (requires_grad) {
     new_tensor.impl()->requires_grad = true;
     new_tensor.autograd()->is_leaf = false;
     new_tensor.autograd()->grad_fn =
@@ -403,7 +438,9 @@ Tensor mse(Tensor const&pred, Tensor const&target) {
 }
 
 Tensor operator+(Tensor &l, Tensor &r) { return l.add(r); }
+
 Tensor operator-(Tensor &l, Tensor &r) { return l.sub(r); }
+
 Tensor operator*(Tensor &l, Tensor &r) { return l.matmul(r); }
 
 Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
@@ -419,7 +456,6 @@ Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
   }
 
   storage->ptr = ptr;
-  storage->bytes = bytes;
   storage->device = d;
 
   auto *tensor = new TensorImpl(dims, rank, data);
