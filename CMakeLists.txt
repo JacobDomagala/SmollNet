@@ -26,7 +26,6 @@ target_compile_options(${PROJECT_NAME}
   PUBLIC
     $<$<COMPILE_LANGUAGE:CUDA>:-G>
     $<$<COMPILE_LANGUAGE:CUDA>:-g>
-    $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>
     $<$<COMPILE_LANGUAGE:CXX>:-g>
 )
 

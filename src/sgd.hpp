@@ -1,4 +1,5 @@
 #pragma once
+
 #include "tensor.hpp"
 #include <vector>
 
@@ -9,7 +10,7 @@ class SGD {
   float lr_;
 
 public:
-  SGD(std::vector<Tensor>&& params, float lr)
+  SGD(std::vector<Tensor> &&params, float lr)
       : params_(std::move(params)), lr_(lr) {}
   void step();
   void zero_grad();

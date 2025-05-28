@@ -19,6 +19,10 @@ enum class DataType {
   i64
 };
 
+enum class Optimizer {
+  SGD
+};
+
 constexpr const char *get_device_name(Device d) noexcept {
   switch (d) {
   case Device::CPU:

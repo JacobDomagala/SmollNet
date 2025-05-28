@@ -14,7 +14,7 @@ CLANG=/usr/local/bin
 
 mkdir -p "$BUILD"
 
-BUILD_TYPE=Debug
+BUILD_TYPE=Release
 /home/jdomagala/Work/bin/conan install . -of ./build --build=missing --settings=build_type=$BUILD_TYPE -s compiler.cppstd=gnu20
 if [[ "$BUILD_TYPE" == "Debug" ]]; then
   CONAN_PRESET="conan-debug"

@@ -384,6 +384,8 @@ Tensor sum(Tensor const &t, int64_t dim) {
 
 Tensor mse(Tensor const&pred, Tensor const&target) {
   ASSERT(pred.dims() == target.dims(), "");
+
+  // We don't support batching
   ASSERT(pred.size(0) == 1, "");
 
   auto new_tensor = zeros({pred.size(0), pred.size(1) + 1},

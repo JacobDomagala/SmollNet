@@ -1,9 +1,7 @@
 #pragma once
-#include "kernels.cuh"
-#include "sgd.hpp"
+
 #include "tensor.hpp"
 
-#include <fmt/core.h>
 #include <memory>
 #include <vector>
 
@@ -14,44 +12,27 @@ struct Module {
   virtual Tensor forward(Tensor &t) const = 0;
   virtual void gradient_update() const = 0;
   virtual void print() const = 0;
+  virtual std::vector<Tensor> parameters() const = 0;
 };
 
 struct Linear : Module {
-  Linear(int64_t in_dim, int64_t out_dim) {
-    weights = rand({in_dim, out_dim}, DataType::f32, Device::CUDA, true);
-    bias = zeros({1, out_dim}, DataType::f32, Device::CUDA, true);
-  }
-  Tensor forward(Tensor &t) const override {
-    return matmul(t, weights).add(bias);
-  }
-  void print() const override {
-    printf("Linear layer [\n\tWeights: ");
-    weights.print();
+  Linear(int64_t in_dim, int64_t out_dim);
 
-    printf("\tBias:");
-    bias.print();
-    printf("]\n");
-  }
+  Tensor forward(Tensor &t) const override;
+  std::vector<Tensor> parameters() const override;
+  void print() const override;
 
-  void gradient_update() const override {
-    if (weights.grad().initialized())
-      launch_sgd_update(weights.data(), weights.grad().data(), 0.001f,
-                        weights.numel());
-    if (bias.grad().initialized())
-      launch_sgd_update(bias.data(), bias.grad().data(), 0.001f, bias.numel());
-
-    weights.zero_grad();
-    bias.zero_grad();
-  }
+  void gradient_update() const override;
 
   Tensor weights;
   Tensor bias;
 };
 
 struct ReLU : Module {
-  Tensor forward(Tensor &t) const override { return relu(t); }
-  void gradient_update() const override {}
-  void print() const override { printf("ReLU\n"); }
+  Tensor forward(Tensor &t) const override;
+  void gradient_update() const override;
+  void print() const override;
+  std::vector<Tensor> parameters() const override;
 };
 
 class Dense {
@@ -62,45 +43,14 @@ public:
      ...);
   }
 
-  Tensor forward(const Tensor &input) const {
-    Tensor output = input;
-    for (auto &layer : layers_) {
-      output = layer->forward(output);
-    }
-    return output;
-  }
+  Tensor forward(const Tensor &input) const;
+  std::vector<Tensor> parameters() const;
 
-  void train(Tensor &input, Tensor &targets) const {
-    constexpr int num_epochs = 32;
+  void train(Tensor &input, Tensor &targets,
+             Optimizer optimizer = Optimizer::SGD, float lr = 0.0001f,
+             int32_t num_epochs = 32) const;
 
-    auto features = input.copy();
-    // std::vector<Tensor> tensors;
-    // for(auto& l : layers_){
-    //   auto&& params = l->params();
-    //   tensors.insert(tensors.end(), params.begin(), params.end());
-    // }
-    // auto optim = SGD(std::move(tensors), 0.02);
-
-    for (int epoch = 0; epoch < num_epochs; ++epoch) {
-      auto output = forward(features);
-      auto loss = mse(output, targets);
-      loss.backward();
-      for (auto &l : layers_) {
-        l->gradient_update();
-      }
-      // optim.step();
-      // optim.zero_grad();
-      fmt::print("[{}] loss = {}\n", epoch,
-                 static_cast<float *>(loss.cpu().data())[0]);
-    }
-  }
-
-  void print() const noexcept {
-    printf("Dense neural network [num_layers: %ld]\n", layers_.size());
-    for (auto &layer : layers_) {
-      layer->print();
-    }
-  }
+  void print() const noexcept;
 
 private:
   std::vector<std::unique_ptr<Module>> layers_;
