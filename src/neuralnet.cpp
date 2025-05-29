@@ -71,7 +71,7 @@ void Dense::train(Tensor &input, Tensor &targets, Optimizer optimizer, float lr,
     optim.step();
     optim.zero_grad();
     fmt::print("[{}] loss = {}\n", epoch,
-               static_cast<float *>(loss.cpu().data())[loss.numel()]);
+               static_cast<float *>(loss.cpu().data())[0]);
   }
 }
 

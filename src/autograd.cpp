@@ -126,9 +126,9 @@ ReLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
     std::vector<Tensor> gi(1);
     if (needs_input_grad[0]) {
         gi[0] = create_grad_tensor(inputs[0]);
-        launch_relu_grad(gi[0].data(),          // grad_in
-                             grad_outputs[0].data(),          // grad_out
-                             inputs[0].data(),      // cached forward input
+        launch_relu_grad(gi[0].data(),
+                             grad_outputs[0].data(),
+                             inputs[0].data(),
                              gi[0].numel());
     }
     return gi;
@@ -149,7 +149,7 @@ TanhFunction::backward(const std::vector<Tensor> &grad_outputs) {
 
   if (needs_input_grad[0]) {
     auto grad_input = create_grad_tensor(inputs[0]);
-    launch_tanh_grad(grad_input.data(), grad_outputs.front().data(),
+    launch_tanh_grad(grad_input.data(), grad_outputs.front().data(), inputs[0].data(),
                      grad_input.numel());
     grad_inputs[0] = grad_input;
   }
@@ -173,7 +173,7 @@ SigmoidFunction::backward(const std::vector<Tensor> &grad_outputs) {
   if (needs_input_grad[0]) {
 
     auto grad_input = create_grad_tensor(inputs[0]);
-    launch_sigmoid_grad(grad_input.data(), grad_outputs.front().data(),
+    launch_sigmoid_grad(grad_input.data(), grad_outputs.front().data(), inputs[0].data(),
                         grad_input.numel());
     grad_inputs[0] = grad_input;
   }

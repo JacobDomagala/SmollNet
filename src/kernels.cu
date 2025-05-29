@@ -213,7 +213,8 @@ void launch_relu(void *out, void *in, size_t total) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void relu_grad_kernel(float *out, float* grad_out, float *in, size_t total) {
+__global__ void relu_grad_kernel(float *out, float *grad_out, float *in,
+                                 size_t total) {
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
 
   if (idx < total)
@@ -225,7 +226,7 @@ void launch_relu_grad(void *out, void *grad_out, void *in, size_t total) {
   int grid = (total + block - 1) / block;
 
   relu_grad_kernel<<<grid, block>>>(static_cast<float *>(out),
-                              static_cast<float *>(grad_out),
+                                    static_cast<float *>(grad_out),
                                     static_cast<float *>(in), total);
   CHECK_CUDA(cudaGetLastError());
 }
@@ -247,19 +248,21 @@ void launch_tanh(void *out, void *in, size_t total) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void tanh_grad_kernel(float *out, float *in, size_t total) {
+__global__ void tanh_grad_kernel(float *out, float *grad_out, float *in,
+                                 size_t total) {
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
 
   if (idx < total)
-    out[idx] = 1.0f - in[idx] * in[idx];
+    out[idx] = grad_out[idx] * (1.0f - in[idx] * in[idx]);
 }
 
-void launch_tanh_grad(void *out, void *in, size_t total) {
+void launch_tanh_grad(void *out, void *grad_out, void *in, size_t total) {
 
   int block = 256;
   int grid = (total + block - 1) / block;
 
   tanh_grad_kernel<<<grid, block>>>(static_cast<float *>(out),
+                                    static_cast<float *>(grad_out),
                                     static_cast<float *>(in), total);
   CHECK_CUDA(cudaGetLastError());
 }
@@ -282,19 +285,21 @@ void launch_sigmoid(void *out, void *in, size_t total) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void sigmoid_grad_kernel(float *output, float *input, int size) {
+__global__ void sigmoid_grad_kernel(float *output, float *grad_out,
+                                    float *input, int size) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < size) {
-    output[idx] = input[idx] * (1.0f - input[idx]);
+    output[idx] = grad_out[idx] * input[idx] * (1.0f - input[idx]);
   }
 }
 
-void launch_sigmoid_grad(void *out, void *in, size_t total) {
+void launch_sigmoid_grad(void *out, void *grad_out, void *in, size_t total) {
 
   int block = 256;
   int grid = (total + block - 1) / block;
 
   sigmoid_grad_kernel<<<grid, block>>>(static_cast<float *>(out),
+                                       static_cast<float *>(grad_out),
                                        static_cast<float *>(in), total);
   CHECK_CUDA(cudaGetLastError());
 }
@@ -333,7 +338,7 @@ void launch_mse(void *out, void *pred, void *target, size_t total) {
 
   CHECK_CUDA(cudaGetLastError());
 
-  mse_sum_kernel<<<grid, block>>>(static_cast<float *>(out) + total,
+  mse_sum_kernel<<<grid, block>>>(static_cast<float *>(out),
                                   static_cast<float *>(out), total);
 
   CHECK_CUDA(cudaGetLastError());
@@ -341,10 +346,9 @@ void launch_mse(void *out, void *pred, void *target, size_t total) {
 __global__ void sgd_kernel(float *w, const float *grad, float lr,
                            size_t total) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx < total){
+  if (idx < total) {
     w[idx] -= lr * grad[idx];
   }
-
 }
 
 void launch_sgd_update(void *p, void *g, float lr, size_t total) {

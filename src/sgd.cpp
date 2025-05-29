@@ -1,5 +1,4 @@
 #include "sgd.hpp"
-#include "helpers.hpp"
 #include "kernels.cuh"
 
 namespace smollnet {
