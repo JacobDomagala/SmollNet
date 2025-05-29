@@ -3,8 +3,10 @@
 #include "helpers.hpp"
 #include "kernels.cuh"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
+
 #include <cuda_runtime.h>
 
 #include <fmt/core.h>
@@ -281,6 +283,48 @@ Tensor Tensor::transpose(int d0, int d1) const {
   return Tensor(view);
 }
 
+Tensor Tensor::expand(const std::array<int64_t, 3> &new_sz) const {
+  const auto &old = impl()->sizes;
+  const int64_t rank = impl()->ndim;
+
+  // check broadcast-compatibility and build new strides
+  std::array<int64_t, 3> ns = old;
+  std::array<int64_t, 3> st = impl()->strides;
+
+  size_t elems = 1;
+  for (int i = 0; i < rank; ++i) {
+    if (old[i] == new_sz[i]) {
+      ns[i] = new_sz[i];
+    } else {
+      ASSERT(old[i] == 1, fmt::format("expand: non-broadcastable dim", old[i]));
+      ns[i] = new_sz[i];
+      st[i] = 0;
+    }
+
+    elems *= ns[i];
+  }
+
+  // make view
+  ++impl()->storage->refcount;
+  auto *v = new TensorImpl();
+  v->sizes = ns;
+  v->strides = st;
+  v->dtype = dtype();
+  v->ndim = rank;
+  v->elems = elems;
+  v->storage = impl()->storage;
+  v->refcount = 1;
+  v->requires_grad = requires_grad();
+
+  // share autograd meta
+  if (impl()->grad) {
+    v->grad = impl()->grad;
+    ++v->grad->refcount;
+  }
+
+  return Tensor(v);
+}
+
 Tensor Tensor::cuda() const {
   if (this->device() == Device::CUDA) {
     return Tensor(*this);
@@ -427,9 +471,6 @@ Tensor sum(Tensor const &t, int64_t dim) {
 
 Tensor mse(Tensor const &pred, Tensor const &target) {
   ASSERT(pred.dims() == target.dims(), "");
-
-  // We don't support batching
-  ASSERT(pred.size(0) == 1, "");
 
   bool requires_grad = any_requires_grad({pred, target});
   auto new_tensor = zeros({pred.size(0), pred.size(1)}, pred.dtype(),

@@ -10,7 +10,13 @@ Linear::Linear(int64_t in_dim, int64_t out_dim) {
   weights = rand({in_dim, out_dim}, DataType::f32, Device::CUDA, true);
   bias = zeros({1, out_dim}, DataType::f32, Device::CUDA, true);
 }
-Tensor Linear::forward(Tensor &t) const { return matmul(t, weights).add(bias); }
+
+Tensor Linear::forward(Tensor &t) {
+  bias = bias.expand({t.dims()[0], bias.dims()[1]});
+
+  return matmul(t, weights).add(bias);
+}
+
 void Linear::print() const {
   printf("Linear layer [\n\tWeights: ");
   weights.print();
@@ -33,7 +39,7 @@ void Linear::gradient_update() const {
 
 std::vector<Tensor> Linear::parameters() const { return {weights, bias}; }
 
-Tensor ReLU::forward(Tensor &t) const { return relu(t); }
+Tensor ReLU::forward(Tensor &t) { return relu(t); }
 void ReLU::gradient_update() const {}
 std::vector<Tensor> ReLU::parameters() const { return {}; }
 void ReLU::print() const { printf("ReLU\n"); }

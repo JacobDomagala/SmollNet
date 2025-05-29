@@ -32,6 +32,7 @@ struct TensorImpl {
   bool requires_grad = false;
   AutogradMeta *grad = nullptr;
 
+  TensorImpl() = default;
   TensorImpl(const int64_t *dims, int64_t rank, DataType type);
   ~TensorImpl();
 };
@@ -76,6 +77,7 @@ public:
   Tensor matmul(Tensor const &other) const;
 
   Tensor transpose(int d0, int d1) const;
+  Tensor expand(const std::array<int64_t, 3>& new_dims) const;
 
   Tensor cuda() const;
   Tensor cpu() const;
