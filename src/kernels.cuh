@@ -24,10 +24,10 @@ void launch_relu(void *out, void *in, size_t total);
 void launch_relu_grad(void *out, void *grad_out, void *in, size_t total);
 
 void launch_tanh(void *out, void *in, size_t total);
-void launch_tanh_grad(void *out, void *in, size_t total);
+void launch_tanh_grad(void *out, void *grad_out, void *in, size_t total);
 
 void launch_sigmoid(void *out, void *in, size_t total);
-void launch_sigmoid_grad(void *out, void *in, size_t total);
+void launch_sigmoid_grad(void *out, void *grad_out, void *in, size_t total);
 
 void launch_mse(void *out, void *pred, void *target, size_t total);
 void launch_sgd_update(void *p, void *g, float lr, size_t total);

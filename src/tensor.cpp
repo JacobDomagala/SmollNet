@@ -14,7 +14,7 @@ namespace smollnet {
 
 template <typename GradF>
 void SetupAutograd(Tensor const &l, Tensor const &r, Tensor const &n) {
-  if (l.requires_grad() or r.requires_grad()) {
+  if (n.requires_grad()) {
     auto *meta = n.autograd();
 
     meta->grad_fn = std::make_shared<GradF>(l, r);
@@ -24,7 +24,7 @@ void SetupAutograd(Tensor const &l, Tensor const &r, Tensor const &n) {
 
 template <typename GradF>
 void SetupAutograd(Tensor const &n, Tensor const &other) {
-  if (other.requires_grad()) {
+  if (n.requires_grad()) {
     auto *meta = n.autograd();
 
     meta->grad_fn = std::make_shared<GradF>(other);
@@ -67,8 +67,12 @@ TensorImpl::TensorImpl(const int64_t *dims, int64_t rank, DataType type) {
 }
 
 TensorImpl::~TensorImpl() {
-  if (storage) {
+  if (--storage->refcount == 0) {
     delete storage;
+  }
+
+  if (grad and --grad->refcount == 0) {
+    delete grad;
   }
 }
 /*
@@ -128,7 +132,7 @@ Tensor::Tensor(Tensor &&o) : impl_(o.impl_) {
 }
 
 Tensor::~Tensor() {
-  if (impl_ && --impl_->refcount == 0) {
+  if (impl_ && (--impl_->refcount == 0)) {
     delete impl_;
   }
 }
@@ -146,13 +150,18 @@ void Tensor::backward(const Tensor &grad_output) {
 
 void Tensor::zero_grad() const {
   ASSERT(autograd(), "Tensor doesn't have gradient!");
+  ASSERT(grad().initialized(), "Gradient is not initialized!");
 
   launch_fill(static_cast<float *>(grad().data()), grad().numel(), 0.0f);
 }
 
 bool Tensor::requires_grad() const noexcept { return impl()->requires_grad; }
 
-Tensor Tensor::grad() const noexcept { return impl()->grad->grad; }
+Tensor Tensor::grad() const noexcept {
+  ASSERT(impl()->grad, "Accessing uninitialized gradient!");
+
+  return impl()->grad->grad;
+}
 
 AutogradMeta *Tensor::autograd() const noexcept { return impl()->grad; }
 
@@ -221,7 +230,7 @@ Tensor Tensor::add(Tensor const &other) const {
          fmt::format("{} vs {}\n", t.ndim, other.impl()->ndim).c_str());
 
   auto new_tensor = empty(t.sizes.data(), t.ndim, t.dtype, t.storage->device,
-                          other.requires_grad());
+                          other.requires_grad() or requires_grad());
 
   launch_add(static_cast<float *>(new_tensor.data()),
              static_cast<float *>(data()), static_cast<float *>(other.data()),
@@ -241,7 +250,7 @@ Tensor Tensor::sub(Tensor const &other) const {
   assert(t.ndim == other.impl()->ndim);
 
   auto new_tensor = empty(t.sizes.data(), t.ndim, t.dtype, t.storage->device,
-                          other.requires_grad());
+                          other.requires_grad() or requires_grad());
 
   launch_sub(static_cast<float *>(new_tensor.data()),
              static_cast<float *>(data()), static_cast<float *>(other.data()),
@@ -427,12 +436,7 @@ Tensor mse(Tensor const &pred, Tensor const &target) {
                           pred.device(), requires_grad);
   launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
 
-  if (requires_grad) {
-    new_tensor.impl()->requires_grad = true;
-    new_tensor.autograd()->is_leaf = false;
-    new_tensor.autograd()->grad_fn =
-        std::make_shared<MseFunction>(pred, target);
-  }
+  SetupAutograd<MseFunction>(pred, target, new_tensor);
 
   return new_tensor;
 }
@@ -455,6 +459,7 @@ Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
     ptr = static_cast<float *>(malloc(bytes));
   }
 
+  storage->refcount = 1;
   storage->ptr = ptr;
   storage->device = d;
 
