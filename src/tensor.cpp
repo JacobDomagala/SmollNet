@@ -131,12 +131,12 @@ void Tensor::print() const noexcept {
 
 void Tensor::print_elms() const noexcept {
   // Could be expensive
-  auto *t = cpu().impl();
+  auto t = cpu();
 
   fmt::print("Tensor: [");
   // For now we print as contig memory, we can do pretty printing later
-  for (int i = 0; i < t->elems; ++i) {
-    fmt::print("{}, ", static_cast<float *>(t->storage->ptr)[i]);
+  for (int i = 0; i < t.numel(); ++i) {
+    fmt::print("{}, ", static_cast<float *>(t.data())[i]);
   }
 
   fmt::print("]\n");
@@ -397,33 +397,35 @@ Tensor sigmoid(Tensor &t) {
 }
 
 Tensor sum(Tensor const &t, int64_t dim) {
-  auto *src = t.impl();
-  auto &dims = src->sizes;
-  auto new_rank = src->ndim - 1;
-  auto data_type = src->dtype;
-  auto device = src->storage->device;
+  auto dims = t.dims();
+  auto new_rank = t.ndims() - 1;
+  auto data_type = t.dtype();
+  auto device = t.device();
 
   // TODO: Check for correct dim!
 
   // build output shape
   int64_t out_dims[3];
-  for (int64_t i = 0, o = 0; i < src->ndim; ++i)
-    if (i != dim)
-      out_dims[o++] = src->sizes[i];
+  for (int64_t i = 0, o = 0; i < t.ndims(); ++i){
+    if (i != dim) {
+      out_dims[o++] = dims[i];
+    }
+  }
+
 
   Tensor new_tensor = empty(out_dims, new_rank, data_type, device);
 
   auto *srcp = t.data();
   auto *dst = new_tensor.data();
   if (dim == 0) {
-    int64_t d0 = src->sizes[0];
-    int64_t rest = std::max(src->sizes[1] * src->sizes[2], 1l);
+    int64_t d0 = dims[0];
+    int64_t rest = std::max(dims[1] * dims[2], 1l);
     launch_sum_dim0(dst, srcp, d0, rest);
   } else if (dim == 1) {
-    launch_sum_dim1(dst, srcp, src->sizes[0], src->sizes[1], src->sizes[2]);
+    launch_sum_dim1(dst, srcp, dims[0], dims[1], dims[2]);
   } else {
     // dim==2
-    launch_sum_dim2(dst, srcp, src->sizes[0], src->sizes[1], src->sizes[2]);
+    launch_sum_dim2(dst, srcp, dims[0], dims[1], dims[2]);
   }
   return new_tensor;
 }

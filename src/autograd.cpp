@@ -10,7 +10,7 @@ namespace smollnet {
 // Helper function to check if any tensor requires grad
 bool any_requires_grad(const std::vector<Tensor> &tensors) {
   for (const auto &tensor : tensors) {
-    if (tensor.impl() && tensor.impl()->requires_grad) {
+    if (tensor.initialized() && tensor.requires_grad()) {
       return true;
     }
   }
@@ -26,8 +26,8 @@ Tensor create_grad_tensor(const Tensor &tensor) {
 // AddFunction implementation
 AddFunction::AddFunction(const Tensor &lhs, const Tensor &rhs) {
   inputs = {lhs, rhs};
-  needs_input_grad = {lhs.impl() && lhs.requires_grad(),
-                      rhs.impl() && rhs.requires_grad()};
+  needs_input_grad = {lhs.initialized() && lhs.requires_grad(),
+                      rhs.initialized() && rhs.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -53,8 +53,8 @@ AddFunction::backward(const std::vector<Tensor> &grad_outputs) {
 // SubFunction implementation
 SubFunction::SubFunction(const Tensor &lhs, const Tensor &rhs) {
   inputs = {lhs, rhs};
-  needs_input_grad = {lhs.impl() && lhs.requires_grad(),
-                      rhs.impl() && rhs.requires_grad()};
+  needs_input_grad = {lhs.initialized() && lhs.requires_grad(),
+                      rhs.initialized() && rhs.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -87,8 +87,8 @@ MatmulFunction::MatmulFunction(const Tensor &lhs, const Tensor &rhs) {
   inputs = {lhs, rhs};
   lhs_shape = lhs.dims();
   rhs_shape = rhs.dims();
-  needs_input_grad = {lhs.impl() && lhs.requires_grad(),
-                      rhs.impl() && rhs.requires_grad()};
+  needs_input_grad = {lhs.initialized() && lhs.requires_grad(),
+                      rhs.initialized() && rhs.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -117,7 +117,7 @@ MatmulFunction::backward(const std::vector<Tensor> &grad_outputs) {
 // ReLUFunction implementation
 ReLUFunction::ReLUFunction(const Tensor &input) {
   inputs = {input};
-  needs_input_grad = {input.impl() && input.requires_grad()};
+  needs_input_grad = {input.initialized() && input.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -137,7 +137,7 @@ ReLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
 // TanhFunction implementation
 TanhFunction::TanhFunction(const Tensor &input) {
   inputs = {input};
-  needs_input_grad = {input.impl() && input.requires_grad()};
+  needs_input_grad = {input.initialized() && input.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -160,7 +160,7 @@ TanhFunction::backward(const std::vector<Tensor> &grad_outputs) {
 // SigmoidFunction implementation
 SigmoidFunction::SigmoidFunction(const Tensor &input) {
   inputs = {input};
-  needs_input_grad = {input.impl() && input.requires_grad()};
+  needs_input_grad = {input.initialized() && input.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -185,7 +185,7 @@ SigmoidFunction::backward(const std::vector<Tensor> &grad_outputs) {
 SumFunction::SumFunction(const Tensor &input, int64_t dim) : dim_(dim) {
   inputs = {input};
   input_shape_ = input.dims();
-  needs_input_grad = {input.impl() && input.requires_grad()};
+  needs_input_grad = {input.initialized() && input.requires_grad()};
 }
 
 std::vector<Tensor>
@@ -231,7 +231,7 @@ std::vector<Tensor> MseFunction::backward(const std::vector<Tensor>& go) {
 
 // Main backward function - implements reverse-mode automatic differentiation
 void backward(Tensor &tensor, const Tensor &grad_output) {
-  ASSERT(tensor.impl(), "Cannot compute gradients for null tensor");
+  ASSERT(tensor.initialized(), "Cannot compute gradients for null tensor");
   ASSERT(tensor.requires_grad(), "Tensor does not require gradients");
 
   auto *meta = tensor.autograd();

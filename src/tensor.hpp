@@ -56,9 +56,8 @@ public:
 
   ~Tensor() = default;
 
-  bool initialized() const noexcept;
   TensorImpl *impl() const noexcept;
-
+  bool initialized() const noexcept;
   void backward(const Tensor &grad_output = Tensor());
   void zero_grad() const;
   bool requires_grad() const noexcept;

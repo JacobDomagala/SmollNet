@@ -7,23 +7,29 @@ using namespace smollnet;
 int main() {
   constexpr int input_size = 10;
 
-  Tensor input = rand({input_size, 128}, DataType::f32, Device::CUDA);
-  Tensor targets = rand({input_size, 1}, DataType::f32, Device::CUDA);
-  auto targets_h = targets.cpu();
+  Tensor a = ones({1,1}, DataType::f32, Device::CUDA);
+  Tensor b = ones({1,6}, DataType::f32, Device::CUDA);
 
-  auto net = Dense(Linear(128, 64), ReLU(), Linear(64, 1));
+  auto c = a + b;
 
-  for (int epoch = 0; epoch < 32; ++epoch) {
-    auto res = net.forward(input);
-    auto loss = mse(res, targets);
-    fmt::print("[{}] predicted:{} target:{} loss:{}\n", epoch,
-               static_cast<float *>(res.cpu().data())[0],
-               static_cast<float *>(targets_h.data())[0],
-               static_cast<float *>(loss.cpu().data())[0]);
-    loss.backward();
+  c.print_elms();
+  // Tensor input = rand({input_size, 128}, DataType::f32, Device::CUDA);
+  // Tensor targets = rand({input_size, 1}, DataType::f32, Device::CUDA);
+  // auto targets_h = targets.cpu();
 
-    auto optim = SGD(net.parameters(), 0.00001f);
-    optim.step();
-    optim.zero_grad();
-  }
+  // auto net = Dense(Linear(128, 64), ReLU(), Linear(64, 1));
+
+  // for (int epoch = 0; epoch < 32; ++epoch) {
+  //   auto res = net.forward(input);
+  //   auto loss = mse(res, targets);
+  //   fmt::print("[{}] predicted:{} target:{} loss:{}\n", epoch,
+  //              static_cast<float *>(res.cpu().data())[0],
+  //              static_cast<float *>(targets_h.data())[0],
+  //              static_cast<float *>(loss.cpu().data())[0]);
+  //   loss.backward();
+
+  //   auto optim = SGD(net.parameters(), 0.00001f);
+  //   optim.step();
+  //   optim.zero_grad();
+  // }
 }
