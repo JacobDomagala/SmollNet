@@ -58,6 +58,46 @@ void launch_add(float *out, float *left, float *right, size_t numElems) {
   CHECK_CUDA(cudaGetLastError());
 }
 
+__global__ void add_strided_kernel(float *__restrict__ out,
+                                   const float *__restrict__ a,
+                                   const float *__restrict__ b, StrideInfo s,
+                                   size_t total) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= total)
+    return;
+
+  // Decode linear index -> (i,j,k)
+  int64_t i = 0, j = 0, k = 0;
+  if (s.rank == 3) {
+    int64_t rest = s.size[1] * s.size[2];
+    i = idx / rest;
+    int64_t rem = idx % rest;
+    j = rem / s.size[2];
+    k = rem % s.size[2];
+  } else if (s.rank == 2) {
+    i = idx / s.size[1];
+    j = idx % s.size[1];
+  } else { // rank == 1
+    i = idx;
+  }
+
+  int64_t offA = i * s.astr[0] + j * s.astr[1] + k * s.astr[2];
+  int64_t offB = i * s.bstr[0] + j * s.bstr[1] + k * s.bstr[2];
+
+  out[idx] = a[offA] + b[offB];
+}
+
+void launch_add_strided(void *dst, void *A, void *B, const StrideInfo &s,
+                        size_t total) {
+  dim3 blk(256);
+  dim3 grd((total + blk.x - 1) / blk.x);
+
+  add_strided_kernel<<<grd, blk>>>(static_cast<float *>(dst),
+                                   static_cast<const float *>(A),
+                                   static_cast<const float *>(B), s, total);
+  CHECK_CUDA(cudaGetLastError());
+}
+
 template <typename T>
 __global__ void sub_kernel(T *out, T *left, T *right, size_t n) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;

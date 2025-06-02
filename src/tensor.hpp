@@ -2,9 +2,10 @@
 
 #include "types.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <array>
+#include <memory>
 
 namespace smollnet {
 
@@ -12,14 +13,13 @@ struct AutogradMeta;
 
 struct Storage {
   void *ptr = nullptr;
-  int refcount = 0;
   Device device;
 
   ~Storage();
 };
 
 struct TensorImpl {
-  Storage *storage = nullptr;
+  std::shared_ptr<Storage> storage = nullptr;
   std::array<int64_t, 3> sizes = {0, 0, 0};
   std::array<int64_t, 3> strides = {0, 0, 0};
 
@@ -27,30 +27,34 @@ struct TensorImpl {
   int64_t ndim;
 
   DataType dtype;
-  int refcount = 0;
 
   bool requires_grad = false;
-  AutogradMeta *grad = nullptr;
+  std::shared_ptr<AutogradMeta> grad = nullptr;
 
   TensorImpl() = default;
+  TensorImpl(const TensorImpl &) = default;
+  TensorImpl(TensorImpl &&) = default;
+  TensorImpl &operator=(const TensorImpl &) = default;
+  TensorImpl &operator=(TensorImpl &&) = default;
+  ~TensorImpl() = default;
+
   TensorImpl(const int64_t *dims, int64_t rank, DataType type);
-  ~TensorImpl();
 };
 
 class Tensor {
-  TensorImpl *impl_ = nullptr;
+  std::shared_ptr<TensorImpl> impl_ = nullptr;
 
 public:
   Tensor();
-  explicit Tensor(TensorImpl *p);
+  Tensor(std::shared_ptr<TensorImpl> impl);
 
-  Tensor &operator=(const Tensor &o) noexcept;
-  Tensor &operator=(Tensor &&o) noexcept;
+  Tensor &operator=(const Tensor &o) noexcept = default;
+  Tensor &operator=(Tensor &&o) noexcept = default;
 
-  Tensor(const Tensor &o);
-  Tensor(Tensor &&o);
+  Tensor(const Tensor &o) = default;
+  Tensor(Tensor &&o) = default;
 
-  ~Tensor();
+  ~Tensor() = default;
 
   bool initialized() const noexcept;
   TensorImpl *impl() const noexcept;
@@ -77,7 +81,7 @@ public:
   Tensor matmul(Tensor const &other) const;
 
   Tensor transpose(int d0, int d1) const;
-  Tensor expand(const std::array<int64_t, 3>& new_dims) const;
+  Tensor expand(const std::array<int64_t, 3> &new_dims) const;
 
   Tensor cuda() const;
   Tensor cpu() const;

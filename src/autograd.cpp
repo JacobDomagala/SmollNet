@@ -261,7 +261,7 @@ void backward(Tensor &tensor, const Tensor &grad_output) {
 
     visited.insert(current_impl);
 
-    auto *current_meta = static_cast<AutogradMeta *>(current_impl->grad);
+    auto *current_meta = current_impl->grad.get();
     if (!current_meta)
       continue;
 

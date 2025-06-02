@@ -20,8 +20,10 @@ conan profile detect
 /home/jdomagala/Work/bin/conan install . -of ./build --build=missing --settings=build_type=$BUILD_TYPE -s compiler.cppstd=gnu20
 if [[ "$BUILD_TYPE" == "Debug" ]]; then
   CONAN_PRESET="conan-debug"
-else
+elif [[ "$BUILD_TYPE" == "Release" ]]; then
   CONAN_PRESET="conan-release"
+else
+  CONAN_PRESET="conan-relwithdebinfo"
 fi
 
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
