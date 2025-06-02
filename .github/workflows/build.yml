@@ -1,4 +1,4 @@
-name: Ubuntu
+name: Static Analysis
 
 on:
   push:
@@ -9,6 +9,10 @@ on:
 permissions:
   pull-requests: write
   contents: read
+
+# Gotta do this for clang-tidy to work
+env:
+  CONAN_HOME: ${{ github.workspace }}/.conan
 
 jobs:
   build:
@@ -28,3 +32,14 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         comment_title: UBUNTU COMPILE RESULT
         compile_result_file: ${{ github.workspace }}/build/output.txt
+
+    - name: Static Analysis
+      uses: JacobDomagala/StaticAnalysis@master
+      with:
+        compile_commands: build/compile_commands.json
+        compile_commands_replace_prefix: true
+        verbose: true
+        clang_tidy_args: |
+            -extra-arg=-std=c++20
+        cppcheck_args: |
+            --enable=all --suppress=missingIncludeSystem --suppress=functionStatic --suppress=unusedFunction --inline-suppr --inconclusive --check-level=exhaustive

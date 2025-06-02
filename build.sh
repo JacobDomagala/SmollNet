@@ -15,6 +15,7 @@ CLANG=/usr/local/bin
 mkdir -p "$BUILD"
 
 BUILD_TYPE=Release
+
 /home/jdomagala/Work/bin/conan install . -of ./build --build=missing --settings=build_type=$BUILD_TYPE -s compiler.cppstd=gnu20
 if [[ "$BUILD_TYPE" == "Debug" ]]; then
   CONAN_PRESET="conan-debug"
@@ -40,7 +41,7 @@ cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
   -DCMAKE_CXX_COMPILER="$CLANG/clang++" \
   -DSmollNet_ROOT=${BUILD}/smollnet \
-  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF \
   --fresh | tee -a "$BUILD/output.txt"
 
 cmake --build "$BUILD" | tee -a "$BUILD/output.txt"
