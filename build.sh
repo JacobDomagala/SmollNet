@@ -16,6 +16,7 @@ mkdir -p "$BUILD"
 
 BUILD_TYPE=Release
 
+conan profile detect
 /home/jdomagala/Work/bin/conan install . -of ./build --build=missing --settings=build_type=$BUILD_TYPE -s compiler.cppstd=gnu20
 if [[ "$BUILD_TYPE" == "Debug" ]]; then
   CONAN_PRESET="conan-debug"
