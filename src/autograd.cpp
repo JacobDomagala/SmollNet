@@ -39,12 +39,30 @@ AddFunction::backward(const std::vector<Tensor> &grad_outputs) {
 
   if (needs_input_grad[0]) {
     // Gradient w.r.t. lhs is just the incoming gradient
-    grad_inputs[0] = grad_outputs[0];
+    Tensor grad = grad_outputs[0].copy();
+
+    auto sizes = inputs[0].dims();
+    for(int dim = 0; dim < inputs[0].ndims(); ++dim) {
+      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+        grad = sum(grad, dim, true);
+      }
+    }
+
+    grad_inputs[0] = grad;
   }
 
   if (needs_input_grad[1]) {
     // Gradient w.r.t. rhs is just the incoming gradient
-    grad_inputs[1] = grad_outputs[0];
+    Tensor grad = grad_outputs[0].copy();
+
+    auto sizes = inputs[1].dims();
+    for(int dim = 0; dim < inputs[1].ndims(); ++dim) {
+      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+        grad = sum(grad, dim, true);
+      }
+    }
+
+    grad_inputs[1] = grad;
   }
 
   return grad_inputs;
@@ -65,15 +83,32 @@ SubFunction::backward(const std::vector<Tensor> &grad_outputs) {
   std::vector<Tensor> grad_inputs(2);
 
   if (needs_input_grad[0]) {
-    // Gradient w.r.t. lhs is the incoming gradient
-    grad_inputs[0] = grad_outputs[0];
+    // Gradient w.r.t. lhs is just the incoming gradient
+    Tensor grad = grad_outputs[0].copy();
+
+    auto sizes = inputs[0].dims();
+    for(int dim = 0; dim < inputs[0].ndims(); ++dim) {
+      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+        grad = sum(grad, dim, true);
+      }
+    }
+
+    grad_inputs[0] = grad;
   }
 
   if (needs_input_grad[1]) {
     // Gradient w.r.t. rhs is negative of incoming gradient
-    auto output = grad_outputs[0].copy();
-    launch_negative(output.data(), output.numel());
-    grad_inputs[1] = output;
+    Tensor grad = grad_outputs[0].copy();
+
+    auto sizes = inputs[1].dims();
+    for(int dim = 0; dim < inputs[1].ndims(); ++dim) {
+      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+        grad = sum(grad, dim, true);
+      }
+    }
+
+    launch_negative(grad.data(), grad.numel());
+    grad_inputs[1] = grad;
   }
 
   return grad_inputs;

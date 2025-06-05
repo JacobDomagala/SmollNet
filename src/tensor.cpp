@@ -125,10 +125,10 @@ std::array<int64_t, 3> Tensor::strides() const noexcept {
 
 void Tensor::print() const noexcept {
   auto &t = *impl();
-  printf("Tensor: [Refcount: %ld Rank: %ld dim(%ld, %ld, %ld) strides(%ld, "
+  printf("Tensor: [Refcount: %ld addr: %p Rank: %ld dim(%ld, %ld, %ld) strides(%ld, "
          "%ld, %ld) "
          "dtype:%s requires_grad:%s]\n\t Storage [Refcount: %ld addr: %p]\n",
-         impl_.use_count(), t.ndim, t.sizes[0], t.sizes[1], t.sizes[2],
+         impl_.use_count(), impl_.get(), t.ndim, t.sizes[0], t.sizes[1], t.sizes[2],
          t.strides[0], t.strides[1], t.strides[2], get_name(t.dtype),
          requires_grad() ? "true" : "false", t.storage.use_count(),
          t.storage->ptr);
@@ -461,9 +461,12 @@ Tensor sum(Tensor const &t, int64_t dim, bool keep_dim) {
 
   auto *srcp = t.data();
   auto *dst = new_tensor.data();
+  dims[0] = std::max(dims[0], 1l);
+  dims[1] = std::max(dims[1], 1l);
+  dims[2] = std::max(dims[2], 1l);
   if (dim == 0) {
     int64_t d0 = dims[0];
-    int64_t rest = std::max(dims[1] * dims[2], 1l);
+    int64_t rest = dims[1] * dims[2];
     launch_sum_dim0(dst, srcp, d0, rest);
   } else if (dim == 1) {
     launch_sum_dim1(dst, srcp, dims[0], dims[1], dims[2]);
@@ -472,7 +475,6 @@ Tensor sum(Tensor const &t, int64_t dim, bool keep_dim) {
     launch_sum_dim2(dst, srcp, dims[0], dims[1], dims[2]);
   }
 
-  new_tensor.print();
   return new_tensor;
 }
 

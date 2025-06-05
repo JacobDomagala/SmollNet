@@ -14,7 +14,7 @@ CLANG=/usr/local/bin
 
 mkdir -p "$BUILD"
 
-BUILD_TYPE=Release
+BUILD_TYPE=Debug
 
 if ! conan profile list | grep -q "default"; then
     echo "Conan 'default' profile not found. Detecting and creating it..."
