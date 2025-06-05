@@ -25,7 +25,6 @@ struct AutogradMeta {
   std::shared_ptr<Function> grad_fn = nullptr;
   Tensor grad;
   bool is_leaf = true;
-  int refcount = 1;
 };
 
 // Specific function implementations

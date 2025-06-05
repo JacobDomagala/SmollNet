@@ -9,7 +9,7 @@ namespace smollnet {
 
 struct Module {
   virtual ~Module() = default;
-  virtual Tensor forward(Tensor &t) const = 0;
+  virtual Tensor forward(Tensor &t) = 0;
   virtual void gradient_update() const = 0;
   virtual void print() const = 0;
   virtual std::vector<Tensor> parameters() const = 0;
@@ -18,7 +18,7 @@ struct Module {
 struct Linear : Module {
   Linear(int64_t in_dim, int64_t out_dim);
 
-  Tensor forward(Tensor &t) const override;
+  Tensor forward(Tensor &t) override;
   std::vector<Tensor> parameters() const override;
   void print() const override;
 
@@ -29,7 +29,7 @@ struct Linear : Module {
 };
 
 struct ReLU : Module {
-  Tensor forward(Tensor &t) const override;
+  Tensor forward(Tensor &t) override;
   void gradient_update() const override;
   void print() const override;
   std::vector<Tensor> parameters() const override;

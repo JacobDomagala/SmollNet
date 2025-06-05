@@ -5,11 +5,20 @@
 
 namespace smollnet {
 
+struct StrideInfo {
+  int64_t size[3]; // logical extents
+  int64_t astr[3]; // strides in floats for A
+  int64_t bstr[3]; // strides in floats for B
+  int rank;        // 1‒3
+};
+
 void launch_fill(float *ptr, size_t numElems, float val);
 void launch_random_init(void *out, size_t total);
 
 // Binary OPS
 void launch_add(float *out, float *left, float *right, size_t numElems);
+void launch_add_strided(void *dst, void *A, void *B, const StrideInfo &s,
+                        size_t total);
 void launch_sub(float *out, float *left, float *right, size_t numElems);
 
 void launch_sum_dim0(void *out, void *in, int64_t d0, int64_t rest);

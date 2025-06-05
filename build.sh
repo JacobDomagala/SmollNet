@@ -16,12 +16,20 @@ mkdir -p "$BUILD"
 
 BUILD_TYPE=Release
 
-conan profile detect
+if ! conan profile list | grep -q "default"; then
+    echo "Conan 'default' profile not found. Detecting and creating it..."
+    conan profile detect
+else
+    echo "Conan 'default' profile already exists. Skipping detection."
+
+fi
 /home/jdomagala/Work/bin/conan install . -of ./build --build=missing --settings=build_type=$BUILD_TYPE -s compiler.cppstd=gnu20
 if [[ "$BUILD_TYPE" == "Debug" ]]; then
   CONAN_PRESET="conan-debug"
-else
+elif [[ "$BUILD_TYPE" == "Release" ]]; then
   CONAN_PRESET="conan-release"
+else
+  CONAN_PRESET="conan-relwithdebinfo"
 fi
 
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
