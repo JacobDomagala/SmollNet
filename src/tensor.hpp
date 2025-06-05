@@ -23,10 +23,11 @@ struct TensorImpl {
   std::array<int64_t, 3> sizes = {0, 0, 0};
   std::array<int64_t, 3> strides = {0, 0, 0};
 
+  bool expanded = false;
   size_t elems = 1;
-  int64_t ndim;
+  int64_t ndim = 0;
 
-  DataType dtype;
+  DataType dtype = DataType::f32;
 
   bool requires_grad = false;
   std::shared_ptr<AutogradMeta> grad = nullptr;
@@ -58,6 +59,7 @@ public:
 
   TensorImpl *impl() const noexcept;
   bool initialized() const noexcept;
+  bool expanded() const noexcept;
   void backward(const Tensor &grad_output = Tensor());
   void zero_grad() const;
   bool requires_grad() const noexcept;
@@ -70,13 +72,14 @@ public:
   void *data() const noexcept;
   size_t numel() const noexcept;
   std::array<int64_t, 3> dims() const noexcept;
+  std::array<int64_t, 3> strides() const noexcept;
   void print() const noexcept;
   void print_elms() const noexcept;
   size_t total_bytes() const noexcept;
 
   Tensor add(Tensor const &other) const;
   Tensor sub(Tensor const &other) const;
-  Tensor sum(int64_t dim) const;
+  Tensor sum(int64_t dim, bool keep_dim = false) const;
   Tensor matmul(Tensor const &other) const;
 
   Tensor transpose(int d0, int d1) const;
@@ -98,7 +101,7 @@ Tensor sigmoid(Tensor &t);
 
 // Operation functions
 Tensor matmul(Tensor const &l, Tensor const &r);
-Tensor sum(Tensor const &t, int64_t dim);
+Tensor sum(Tensor const &t, int64_t dim, bool keep_dim = false);
 Tensor operator+(Tensor const &l, Tensor const &r);
 Tensor operator-(Tensor const &l, Tensor const &r);
 Tensor operator*(Tensor const &l, Tensor const &r);

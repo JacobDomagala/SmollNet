@@ -75,6 +75,7 @@ Tensor::Tensor() : impl_(nullptr) {}
 Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(impl) {}
 
 bool Tensor::initialized() const noexcept { return impl_ != nullptr; }
+bool Tensor::expanded() const noexcept { return impl_->expanded; }
 
 TensorImpl *Tensor::impl() const noexcept {
   ASSERT(impl_, "Trying to use uninitialized Tensor!");
@@ -118,6 +119,10 @@ size_t Tensor::numel() const noexcept { return impl_->elems; }
 
 std::array<int64_t, 3> Tensor::dims() const noexcept { return impl_->sizes; }
 
+std::array<int64_t, 3> Tensor::strides() const noexcept {
+  return impl_->strides;
+}
+
 void Tensor::print() const noexcept {
   auto &t = *impl();
   printf("Tensor: [Refcount: %ld Rank: %ld dim(%ld, %ld, %ld) strides(%ld, "
@@ -146,7 +151,9 @@ size_t Tensor::total_bytes() const noexcept {
   return element_size(dtype()) * numel();
 }
 
-Tensor Tensor::sum(int64_t dim) const { return ::smollnet::sum(*this, dim); }
+Tensor Tensor::sum(int64_t dim, bool keep_dim) const {
+  return ::smollnet::sum(*this, dim, keep_dim);
+}
 
 Tensor Tensor::matmul(Tensor const &other) const {
   return ::smollnet::matmul(*this, other);
@@ -206,7 +213,7 @@ Tensor Tensor::add(const Tensor &other) const {
 }
 
 Tensor Tensor::sub(Tensor const &other) const {
- std::array<int64_t, 3> out_sz = {0, 0, 0};
+  std::array<int64_t, 3> out_sz = {0, 0, 0};
   bool expand_me = false;
   bool expand_other = false;
 
@@ -308,12 +315,12 @@ Tensor Tensor::expand(const std::array<int64_t, 3> &new_sz) const {
   v->elems = elems;
   v->storage = impl()->storage;
   v->requires_grad = requires_grad();
+  v->expanded = true;
 
   // share autograd meta
   if (impl()->grad) {
     v->grad = impl()->grad;
   }
-
 
   return Tensor(v);
 }
@@ -428,24 +435,29 @@ Tensor sigmoid(Tensor &t) {
   return new_tensor;
 }
 
-Tensor sum(Tensor const &t, int64_t dim) {
+Tensor sum(Tensor const &t, int64_t dim, bool keep_dim) {
   auto dims = t.dims();
-  auto new_rank = t.ndims() - 1;
+  auto new_rank = keep_dim ? t.ndims() : t.ndims() - 1;
   auto data_type = t.dtype();
   auto device = t.device();
 
-  // TODO: Check for correct dim!
+  ASSERT(dim < t.ndims(),
+         fmt::format(
+             "Tensor sum(tensor,dim,keep_dim): invalid dim={} t.ndims()={}",
+             dim, t.ndims()));
 
   // build output shape
-  int64_t out_dims[3];
-  for (int64_t i = 0, o = 0; i < t.ndims(); ++i){
+  int64_t out_dims[3] = {0, 0, 0};
+  for (int64_t i = 0, o = 0; i < t.ndims(); ++i) {
     if (i != dim) {
       out_dims[o++] = dims[i];
+    } else if (keep_dim) {
+      out_dims[o++] = 1;
     }
   }
 
-
-  Tensor new_tensor = empty(out_dims, new_rank, data_type, device);
+  Tensor new_tensor =
+      empty(out_dims, new_rank, data_type, device, t.requires_grad());
 
   auto *srcp = t.data();
   auto *dst = new_tensor.data();
@@ -459,6 +471,8 @@ Tensor sum(Tensor const &t, int64_t dim) {
     // dim==2
     launch_sum_dim2(dst, srcp, dims[0], dims[1], dims[2]);
   }
+
+  new_tensor.print();
   return new_tensor;
 }
 
