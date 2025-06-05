@@ -12,9 +12,7 @@ Linear::Linear(int64_t in_dim, int64_t out_dim) {
 }
 
 Tensor Linear::forward(Tensor &t) {
-  auto b = bias.expand({t.dims()[0], bias.dims()[1]});
-
-  return matmul(t, weights).add(b);
+  return matmul(t, weights).add(bias);
 }
 
 void Linear::print() const {
