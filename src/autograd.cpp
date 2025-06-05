@@ -166,6 +166,26 @@ ReLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
     return gi;
 }
 
+// GeLUFunction implementation
+GeLUFunction::GeLUFunction(const Tensor &input) {
+  inputs = {input};
+  needs_input_grad = {input.initialized() && input.requires_grad()};
+}
+
+std::vector<Tensor>
+GeLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
+    ASSERT(grad_outputs.size() == 1, "GeLU backward expects 1 grad_output");
+    std::vector<Tensor> gi(1);
+    if (needs_input_grad[0]) {
+        gi[0] = create_grad_tensor(inputs[0]);
+        launch_gelu_grad(gi[0].data(),
+                             grad_outputs[0].data(),
+                             inputs[0].data(),
+                             gi[0].numel());
+    }
+    return gi;
+}
+
 // TanhFunction implementation
 TanhFunction::TanhFunction(const Tensor &input) {
   inputs = {input};
