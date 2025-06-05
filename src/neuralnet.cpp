@@ -42,6 +42,11 @@ void ReLU::gradient_update() const {}
 std::vector<Tensor> ReLU::parameters() const { return {}; }
 void ReLU::print() const { printf("ReLU\n"); }
 
+Tensor GeLU::forward(Tensor &t) { return gelu(t); }
+void GeLU::gradient_update() const {}
+std::vector<Tensor> GeLU::parameters() const { return {}; }
+void GeLU::print() const { printf("GeLU\n"); }
+
 Tensor Dense::forward(const Tensor &input) const {
   Tensor output = input;
   for (auto &layer : layers_) {
