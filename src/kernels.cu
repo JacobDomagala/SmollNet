@@ -321,6 +321,57 @@ void launch_relu_grad(void *out, void *grad_out, void *in, size_t total) {
   CHECK_CUDA(cudaGetLastError());
 }
 
+__global__ void gelu_kernel(float *out, float *in, size_t total) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (idx < total) {
+    constexpr float sqrt_2_over_pi = 0.7978845608f;
+    out[idx] =
+        0.5f * in[idx] *
+        (1.0f + tanhf(sqrt_2_over_pi *
+                      (in[idx] + 0.044715f * in[idx] * in[idx] * in[idx])));
+  }
+}
+
+void launch_gelu(void *out, void *in, size_t total) {
+
+  int block = 256;
+  int grid = (total + block - 1) / block;
+
+  gelu_kernel<<<grid, block>>>(static_cast<float *>(out),
+                               static_cast<float *>(in), total);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void gelu_grad_kernel(float *out, float *grad_out, float *in,
+                                 size_t total) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (idx < total) {
+    // const float a = std::sqrt(2.0f / M_PI);
+    constexpr float a = 0.7978845608f;
+    constexpr float b = 0.044715f;
+    float x3 = in[idx] * in[idx] * in[idx];
+    float h = in[idx] + b * x3;
+    float tanh_ax = tanhf(a * h);
+    float sech2 = 1.0f - tanh_ax * tanh_ax;
+    float h_prime = 1.0f + 3.0f * b * in[idx] * in[idx];
+
+    float g = 0.5f * (1.0f + tanh_ax) + 0.5f * in[idx] * sech2 * a * h_prime;
+    out[idx] = grad_out[idx] * g;
+  }
+}
+
+void launch_gelu_grad(void *out, void *grad_out, void *in, size_t total) {
+  int block = 256;
+  int grid = (total + block - 1) / block;
+
+  gelu_grad_kernel<<<grid, block>>>(static_cast<float *>(out),
+                                    static_cast<float *>(grad_out),
+                                    static_cast<float *>(in), total);
+  CHECK_CUDA(cudaGetLastError());
+}
+
 __global__ void tanh_kernel(float *out, float *in, size_t total) {
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
 

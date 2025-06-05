@@ -60,6 +60,13 @@ struct ReLUFunction : Function {
   void print() const override { printf("ReLUFunction\n"); }
 };
 
+struct GeLUFunction : Function {
+  GeLUFunction(const Tensor &input);
+  std::vector<Tensor>
+  backward(const std::vector<Tensor> &grad_outputs) override;
+  void print() const override { printf("GeLUFunction\n"); }
+};
+
 struct TanhFunction : Function {
   TanhFunction(const Tensor &input);
   std::vector<Tensor>

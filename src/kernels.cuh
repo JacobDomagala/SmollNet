@@ -35,6 +35,9 @@ void launch_matmul(void *out, void *left, void *right, int64_t ldims[3],
 void launch_relu(void *out, void *in, size_t total);
 void launch_relu_grad(void *out, void *grad_out, void *in, size_t total);
 
+void launch_gelu(void *out, void *in, size_t total);
+void launch_gelu_grad(void *out, void *grad_out, void *in, size_t total);
+
 void launch_tanh(void *out, void *in, size_t total);
 void launch_tanh_grad(void *out, void *grad_out, void *in, size_t total);
 

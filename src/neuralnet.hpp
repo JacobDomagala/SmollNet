@@ -35,6 +35,13 @@ struct ReLU : Module {
   std::vector<Tensor> parameters() const override;
 };
 
+struct GeLU : Module {
+  Tensor forward(Tensor &t) override;
+  void gradient_update() const override;
+  void print() const override;
+  std::vector<Tensor> parameters() const override;
+};
+
 class Dense {
 public:
   template <typename... Args> Dense(Args &&...modules) {

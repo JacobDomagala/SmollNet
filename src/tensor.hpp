@@ -96,6 +96,7 @@ public:
 
 // Activation functions
 Tensor relu(Tensor &t);
+Tensor gelu(Tensor &t);
 Tensor tanh(Tensor &t);
 Tensor sigmoid(Tensor &t);
 

@@ -415,6 +415,17 @@ Tensor relu(Tensor &t) {
   return new_tensor;
 }
 
+Tensor gelu(Tensor &t) {
+  Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
+                            t.requires_grad());
+
+  launch_gelu(new_tensor.data(), t.data(), t.numel());
+
+  SetupAutograd<GeLUFunction>(new_tensor, t);
+
+  return new_tensor;
+}
+
 Tensor tanh(Tensor &t) {
   Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
                             t.requires_grad());
