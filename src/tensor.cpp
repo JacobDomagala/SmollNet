@@ -206,23 +206,55 @@ Tensor Tensor::add(const Tensor &other) const {
 }
 
 Tensor Tensor::sub(Tensor const &other) const {
-  auto &t = *impl();
+ std::array<int64_t, 3> out_sz = {0, 0, 0};
+  bool expand_me = false;
+  bool expand_other = false;
 
-  assert(t.dtype == other.impl()->dtype);
-  assert(t.sizes == other.impl()->sizes);
-  assert(t.elems == other.impl()->elems);
-  assert(t.ndim == other.impl()->ndim);
+  int64_t out_rank = 0;
+  for (int i = 0; i < 3; ++i) {
+    const auto my_size = size(i);
+    const auto other_size = other.size(i);
+    ASSERT(my_size == other_size or (my_size == 1 or my_size == 0) or
+               (other_size == 1 or other_size == 0),
+           fmt::format("Unable to add non-broadcastable Tensors! [{},{},{}] "
+                       "and [{},{},{}]",
+                       size(0), size(1), size(2), other.size(0), other.size(1),
+                       other.size(2)));
 
-  auto new_tensor = empty(t.sizes.data(), t.ndim, t.dtype, t.storage->device,
-                          other.requires_grad() or requires_grad());
+    out_sz[i] = std::max(impl()->sizes[i], other.impl()->sizes[i]);
 
-  launch_sub(static_cast<float *>(new_tensor.data()),
-             static_cast<float *>(data()), static_cast<float *>(other.data()),
-             t.elems);
+    if (out_sz[i] > 0) {
+      out_rank++;
+    }
 
-  SetupAutograd<SubFunction>(*this, other, new_tensor);
+    expand_me |= out_sz[i] != my_size;
+    expand_other |= out_sz[i] != other_size;
+  }
 
-  return new_tensor;
+  auto me_alias = expand_me ? expand(out_sz) : *this;
+  auto other_alias = expand_other ? other.expand(out_sz) : other;
+
+  Tensor out = empty(out_sz.data(), out_rank, dtype(), device(),
+                     requires_grad() || other.requires_grad());
+
+  if (!expand_me and !expand_other) {
+    launch_sub(static_cast<float *>(out.data()), static_cast<float *>(data()),
+               static_cast<float *>(other.data()), out.numel());
+  } else {
+    StrideInfo s{};
+    s.rank = out_rank;
+    for (int i = 0; i < s.rank; ++i) {
+      s.size[i] = out_sz[i];
+      s.astr[i] = me_alias.impl()->strides[i] / sizeof(float); // bytes → floats
+      s.bstr[i] = other_alias.impl()->strides[i] / sizeof(float);
+    }
+
+    launch_sub_strided(out.data(), me_alias.data(), other_alias.data(), s,
+                       out.numel());
+  }
+
+  SetupAutograd<SubFunction>(*this, other, out);
+  return out;
 }
 
 Tensor Tensor::transpose(int d0, int d1) const {

@@ -71,12 +71,9 @@ SubFunction::backward(const std::vector<Tensor> &grad_outputs) {
 
   if (needs_input_grad[1]) {
     // Gradient w.r.t. rhs is negative of incoming gradient
-    auto neg_grad =
-        zeros(grad_outputs[0].dims().data(), grad_outputs[0].ndims(),
-              grad_outputs[0].dtype(), grad_outputs[0].device());
-
-    // TODO: Implement negate operation in kernels
-    grad_inputs[1] = neg_grad.sub(const_cast<Tensor &>(grad_outputs[0]));
+    auto output = grad_outputs[0].copy();
+    launch_negative(output.data(), output.numel());
+    grad_inputs[1] = output;
   }
 
   return grad_inputs;
@@ -101,14 +98,14 @@ MatmulFunction::backward(const std::vector<Tensor> &grad_outputs) {
 
   if (needs_input_grad[0]) {
     // grad_lhs = grad_output @ rhs.T
-    auto rhs_t = inputs[1].transpose(0, 1);
-    grad_inputs[0] = matmul(grad_output, rhs_t);
+    auto rhs_trans = inputs[1].transpose(0, 1);
+    grad_inputs[0] = matmul(grad_output, rhs_trans);
   }
 
   if (needs_input_grad[1]) {
     // grad_rhs = lhs.T @ grad_output
-    auto lhs_t = inputs[0].transpose(0, 1);
-    grad_inputs[1] = matmul(lhs_t, grad_output);
+    auto lhs_trans = inputs[0].transpose(0, 1);
+    grad_inputs[1] = matmul(lhs_trans, grad_output);
   }
 
   return grad_inputs;
