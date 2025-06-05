@@ -8,6 +8,25 @@
 #include <curand_kernel.h>
 
 namespace smollnet {
+__device__ __forceinline__ void compute_dimensions(int (&dims)[3], size_t idx,
+                                                   const StrideInfo &s) {
+
+  if (s.rank == 3) {
+    int64_t rest = s.size[1] * s.size[2];
+    dims[0] = idx / rest;
+    int64_t rem = idx % rest;
+    dims[1] = rem / s.size[2];
+    dims[2] = rem % s.size[2];
+  } else if (s.rank == 2) {
+    dims[0] = idx / s.size[1];
+    dims[1] = idx % s.size[1];
+    dims[2] = 0;
+  } else { // rank == 1
+    dims[0] = idx;
+    dims[1] = 0;
+    dims[2] = 0;
+  }
+}
 
 __global__ void random_init(float *out, size_t total, size_t seed) {
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -29,6 +48,19 @@ void launch_random_init(void *out, size_t total) {
   random_init<<<grid, block>>>(static_cast<float *>(out), total, seed);
 
   CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void negative_kernel(float *ptr, size_t total) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+  if (idx < total)
+    ptr[idx] *= -1.0f;
+}
+
+void launch_negative(void *ptr, size_t total) {
+  dim3 block = 256;
+  dim3 grid = (block.x + total - 1) / block.x;
+
+  negative_kernel<<<grid, block>>>(static_cast<float *>(ptr), total);
 }
 
 template <typename T> __global__ void fill_kernel(T *data, size_t n, T value) {
@@ -67,34 +99,25 @@ __global__ void add_strided_kernel(float *__restrict__ out,
     return;
 
   // Decode linear index -> (i,j,k)
-  int64_t i = 0, j = 0, k = 0;
-  if (s.rank == 3) {
-    int64_t rest = s.size[1] * s.size[2];
-    i = idx / rest;
-    int64_t rem = idx % rest;
-    j = rem / s.size[2];
-    k = rem % s.size[2];
-  } else if (s.rank == 2) {
-    i = idx / s.size[1];
-    j = idx % s.size[1];
-  } else { // rank == 1
-    i = idx;
-  }
+  int dims[3] = {0, 0, 0};
+  compute_dimensions(dims, idx, s);
 
-  int64_t offA = i * s.astr[0] + j * s.astr[1] + k * s.astr[2];
-  int64_t offB = i * s.bstr[0] + j * s.bstr[1] + k * s.bstr[2];
+  int64_t offA =
+      dims[0] * s.astr[0] + dims[1] * s.astr[1] + dims[2] * s.astr[2];
+  int64_t offB =
+      dims[0] * s.bstr[0] + dims[1] * s.bstr[1] + dims[2] * s.bstr[2];
 
   out[idx] = a[offA] + b[offB];
 }
 
-void launch_add_strided(void *dst, void *A, void *B, const StrideInfo &s,
+void launch_add_strided(void *dst, void *a, void *b, const StrideInfo &s,
                         size_t total) {
   dim3 blk(256);
   dim3 grd((total + blk.x - 1) / blk.x);
 
   add_strided_kernel<<<grd, blk>>>(static_cast<float *>(dst),
-                                   static_cast<const float *>(A),
-                                   static_cast<const float *>(B), s, total);
+                                   static_cast<const float *>(a),
+                                   static_cast<const float *>(b), s, total);
   CHECK_CUDA(cudaGetLastError());
 }
 
@@ -105,11 +128,38 @@ __global__ void sub_kernel(T *out, T *left, T *right, size_t n) {
     out[idx] = left[idx] - right[idx];
 }
 
-void launch_sub(float *out, float *left, float *right, size_t numElems) {
+void launch_sub(float *out, float *a, float *b, size_t numElems) {
   dim3 block(256);
   dim3 grid((numElems + block.x - 1) / block.x);
-  sub_kernel<<<grid, block>>>(out, left, right, numElems);
+  sub_kernel<<<grid, block>>>(out, a, b, numElems);
   CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void sub_strided_kernel(float *out, float *a, float *b, StrideInfo s,
+                                   size_t total) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (idx >= total)
+    return;
+
+  // Decode linear index -> (i,j,k)
+  int dims[3] = {0, 0, 0};
+  compute_dimensions(dims, idx, s);
+
+  int64_t offA =
+      dims[0] * s.astr[0] + dims[1] * s.astr[1] + dims[2] * s.astr[2];
+  int64_t offB =
+      dims[0] * s.bstr[0] + dims[1] * s.bstr[1] + dims[2] * s.bstr[2];
+
+  out[idx] = a[offA] - b[offB];
+}
+void launch_sub_strided(void *out, void *a, void *b, const StrideInfo &s,
+                        size_t total) {
+  dim3 block = 256;
+  dim3 grid = (total + block.x - 1) / block.x;
+  sub_strided_kernel<<<grid, block>>>(static_cast<float *>(out),
+                                      static_cast<float *>(a),
+                                      static_cast<float *>(b), s, total);
 }
 
 // Sum over dim-0 (collapse first index)

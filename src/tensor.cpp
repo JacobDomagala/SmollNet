@@ -75,6 +75,7 @@ Tensor::Tensor() : impl_(nullptr) {}
 Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(impl) {}
 
 bool Tensor::initialized() const noexcept { return impl_ != nullptr; }
+bool Tensor::expanded() const noexcept { return impl_->expanded; }
 
 TensorImpl *Tensor::impl() const noexcept {
   ASSERT(impl_, "Trying to use uninitialized Tensor!");
@@ -118,12 +119,16 @@ size_t Tensor::numel() const noexcept { return impl_->elems; }
 
 std::array<int64_t, 3> Tensor::dims() const noexcept { return impl_->sizes; }
 
+std::array<int64_t, 3> Tensor::strides() const noexcept {
+  return impl_->strides;
+}
+
 void Tensor::print() const noexcept {
   auto &t = *impl();
-  printf("Tensor: [Refcount: %ld Rank: %ld dim(%ld, %ld, %ld) strides(%ld, "
+  printf("Tensor: [Refcount: %ld addr: %p Rank: %ld dim(%ld, %ld, %ld) strides(%ld, "
          "%ld, %ld) "
          "dtype:%s requires_grad:%s]\n\t Storage [Refcount: %ld addr: %p]\n",
-         impl_.use_count(), t.ndim, t.sizes[0], t.sizes[1], t.sizes[2],
+         impl_.use_count(), impl_.get(), t.ndim, t.sizes[0], t.sizes[1], t.sizes[2],
          t.strides[0], t.strides[1], t.strides[2], get_name(t.dtype),
          requires_grad() ? "true" : "false", t.storage.use_count(),
          t.storage->ptr);
@@ -146,7 +151,9 @@ size_t Tensor::total_bytes() const noexcept {
   return element_size(dtype()) * numel();
 }
 
-Tensor Tensor::sum(int64_t dim) const { return ::smollnet::sum(*this, dim); }
+Tensor Tensor::sum(int64_t dim, bool keep_dim) const {
+  return ::smollnet::sum(*this, dim, keep_dim);
+}
 
 Tensor Tensor::matmul(Tensor const &other) const {
   return ::smollnet::matmul(*this, other);
@@ -206,23 +213,55 @@ Tensor Tensor::add(const Tensor &other) const {
 }
 
 Tensor Tensor::sub(Tensor const &other) const {
-  auto &t = *impl();
+  std::array<int64_t, 3> out_sz = {0, 0, 0};
+  bool expand_me = false;
+  bool expand_other = false;
 
-  assert(t.dtype == other.impl()->dtype);
-  assert(t.sizes == other.impl()->sizes);
-  assert(t.elems == other.impl()->elems);
-  assert(t.ndim == other.impl()->ndim);
+  int64_t out_rank = 0;
+  for (int i = 0; i < 3; ++i) {
+    const auto my_size = size(i);
+    const auto other_size = other.size(i);
+    ASSERT(my_size == other_size or (my_size == 1 or my_size == 0) or
+               (other_size == 1 or other_size == 0),
+           fmt::format("Unable to add non-broadcastable Tensors! [{},{},{}] "
+                       "and [{},{},{}]",
+                       size(0), size(1), size(2), other.size(0), other.size(1),
+                       other.size(2)));
 
-  auto new_tensor = empty(t.sizes.data(), t.ndim, t.dtype, t.storage->device,
-                          other.requires_grad() or requires_grad());
+    out_sz[i] = std::max(impl()->sizes[i], other.impl()->sizes[i]);
 
-  launch_sub(static_cast<float *>(new_tensor.data()),
-             static_cast<float *>(data()), static_cast<float *>(other.data()),
-             t.elems);
+    if (out_sz[i] > 0) {
+      out_rank++;
+    }
 
-  SetupAutograd<SubFunction>(*this, other, new_tensor);
+    expand_me |= out_sz[i] != my_size;
+    expand_other |= out_sz[i] != other_size;
+  }
 
-  return new_tensor;
+  auto me_alias = expand_me ? expand(out_sz) : *this;
+  auto other_alias = expand_other ? other.expand(out_sz) : other;
+
+  Tensor out = empty(out_sz.data(), out_rank, dtype(), device(),
+                     requires_grad() || other.requires_grad());
+
+  if (!expand_me and !expand_other) {
+    launch_sub(static_cast<float *>(out.data()), static_cast<float *>(data()),
+               static_cast<float *>(other.data()), out.numel());
+  } else {
+    StrideInfo s{};
+    s.rank = out_rank;
+    for (int i = 0; i < s.rank; ++i) {
+      s.size[i] = out_sz[i];
+      s.astr[i] = me_alias.impl()->strides[i] / sizeof(float); // bytes → floats
+      s.bstr[i] = other_alias.impl()->strides[i] / sizeof(float);
+    }
+
+    launch_sub_strided(out.data(), me_alias.data(), other_alias.data(), s,
+                       out.numel());
+  }
+
+  SetupAutograd<SubFunction>(*this, other, out);
+  return out;
 }
 
 Tensor Tensor::transpose(int d0, int d1) const {
@@ -276,12 +315,12 @@ Tensor Tensor::expand(const std::array<int64_t, 3> &new_sz) const {
   v->elems = elems;
   v->storage = impl()->storage;
   v->requires_grad = requires_grad();
+  v->expanded = true;
 
   // share autograd meta
   if (impl()->grad) {
     v->grad = impl()->grad;
   }
-
 
   return Tensor(v);
 }
@@ -396,30 +435,38 @@ Tensor sigmoid(Tensor &t) {
   return new_tensor;
 }
 
-Tensor sum(Tensor const &t, int64_t dim) {
+Tensor sum(Tensor const &t, int64_t dim, bool keep_dim) {
   auto dims = t.dims();
-  auto new_rank = t.ndims() - 1;
+  auto new_rank = keep_dim ? t.ndims() : t.ndims() - 1;
   auto data_type = t.dtype();
   auto device = t.device();
 
-  // TODO: Check for correct dim!
+  ASSERT(dim < t.ndims(),
+         fmt::format(
+             "Tensor sum(tensor,dim,keep_dim): invalid dim={} t.ndims()={}",
+             dim, t.ndims()));
 
   // build output shape
-  int64_t out_dims[3];
-  for (int64_t i = 0, o = 0; i < t.ndims(); ++i){
+  int64_t out_dims[3] = {0, 0, 0};
+  for (int64_t i = 0, o = 0; i < t.ndims(); ++i) {
     if (i != dim) {
       out_dims[o++] = dims[i];
+    } else if (keep_dim) {
+      out_dims[o++] = 1;
     }
   }
 
-
-  Tensor new_tensor = empty(out_dims, new_rank, data_type, device);
+  Tensor new_tensor =
+      empty(out_dims, new_rank, data_type, device, t.requires_grad());
 
   auto *srcp = t.data();
   auto *dst = new_tensor.data();
+  dims[0] = std::max(dims[0], 1l);
+  dims[1] = std::max(dims[1], 1l);
+  dims[2] = std::max(dims[2], 1l);
   if (dim == 0) {
     int64_t d0 = dims[0];
-    int64_t rest = std::max(dims[1] * dims[2], 1l);
+    int64_t rest = dims[1] * dims[2];
     launch_sum_dim0(dst, srcp, d0, rest);
   } else if (dim == 1) {
     launch_sum_dim1(dst, srcp, dims[0], dims[1], dims[2]);
@@ -427,6 +474,7 @@ Tensor sum(Tensor const &t, int64_t dim) {
     // dim==2
     launch_sum_dim2(dst, srcp, dims[0], dims[1], dims[2]);
   }
+
   return new_tensor;
 }
 

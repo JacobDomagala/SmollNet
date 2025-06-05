@@ -13,7 +13,7 @@ int main() {
 
   auto net = Dense(Linear(128, 64), ReLU(), Linear(64, 1));
 
-  for (int epoch = 0; epoch < 64; ++epoch) {
+  for (int epoch = 0; epoch < 32; ++epoch) {
     auto res = net.forward(input);
     auto loss = mse(res, targets);
     fmt::print("[{}] predicted:{} target:{} loss:{}\n", epoch,

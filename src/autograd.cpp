@@ -39,12 +39,30 @@ AddFunction::backward(const std::vector<Tensor> &grad_outputs) {
 
   if (needs_input_grad[0]) {
     // Gradient w.r.t. lhs is just the incoming gradient
-    grad_inputs[0] = grad_outputs[0];
+    Tensor grad = grad_outputs[0].copy();
+
+    auto sizes = inputs[0].dims();
+    for(int dim = 0; dim < inputs[0].ndims(); ++dim) {
+      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+        grad = sum(grad, dim, true);
+      }
+    }
+
+    grad_inputs[0] = grad;
   }
 
   if (needs_input_grad[1]) {
     // Gradient w.r.t. rhs is just the incoming gradient
-    grad_inputs[1] = grad_outputs[0];
+    Tensor grad = grad_outputs[0].copy();
+
+    auto sizes = inputs[1].dims();
+    for(int dim = 0; dim < inputs[1].ndims(); ++dim) {
+      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+        grad = sum(grad, dim, true);
+      }
+    }
+
+    grad_inputs[1] = grad;
   }
 
   return grad_inputs;
@@ -65,18 +83,32 @@ SubFunction::backward(const std::vector<Tensor> &grad_outputs) {
   std::vector<Tensor> grad_inputs(2);
 
   if (needs_input_grad[0]) {
-    // Gradient w.r.t. lhs is the incoming gradient
-    grad_inputs[0] = grad_outputs[0];
+    // Gradient w.r.t. lhs is just the incoming gradient
+    Tensor grad = grad_outputs[0].copy();
+
+    auto sizes = inputs[0].dims();
+    for(int dim = 0; dim < inputs[0].ndims(); ++dim) {
+      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+        grad = sum(grad, dim, true);
+      }
+    }
+
+    grad_inputs[0] = grad;
   }
 
   if (needs_input_grad[1]) {
     // Gradient w.r.t. rhs is negative of incoming gradient
-    auto neg_grad =
-        zeros(grad_outputs[0].dims().data(), grad_outputs[0].ndims(),
-              grad_outputs[0].dtype(), grad_outputs[0].device());
+    Tensor grad = grad_outputs[0].copy();
 
-    // TODO: Implement negate operation in kernels
-    grad_inputs[1] = neg_grad.sub(const_cast<Tensor &>(grad_outputs[0]));
+    auto sizes = inputs[1].dims();
+    for(int dim = 0; dim < inputs[1].ndims(); ++dim) {
+      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+        grad = sum(grad, dim, true);
+      }
+    }
+
+    launch_negative(grad.data(), grad.numel());
+    grad_inputs[1] = grad;
   }
 
   return grad_inputs;
@@ -101,14 +133,14 @@ MatmulFunction::backward(const std::vector<Tensor> &grad_outputs) {
 
   if (needs_input_grad[0]) {
     // grad_lhs = grad_output @ rhs.T
-    auto rhs_t = inputs[1].transpose(0, 1);
-    grad_inputs[0] = matmul(grad_output, rhs_t);
+    auto rhs_trans = inputs[1].transpose(0, 1);
+    grad_inputs[0] = matmul(grad_output, rhs_trans);
   }
 
   if (needs_input_grad[1]) {
     // grad_rhs = lhs.T @ grad_output
-    auto lhs_t = inputs[0].transpose(0, 1);
-    grad_inputs[1] = matmul(lhs_t, grad_output);
+    auto lhs_trans = inputs[0].transpose(0, 1);
+    grad_inputs[1] = matmul(lhs_trans, grad_output);
   }
 
   return grad_inputs;
