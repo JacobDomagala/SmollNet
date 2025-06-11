@@ -71,8 +71,8 @@ public:
   DataType dtype() const noexcept;
   void *data() const noexcept;
   size_t numel() const noexcept;
-  std::array<int64_t, 3> dims() const noexcept;
-  std::array<int64_t, 3> strides() const noexcept;
+  const std::array<int64_t, 3>& dims() const noexcept;
+  const std::array<int64_t, 3>& strides() const noexcept;
   void print() const;
   void print_elms() const;
   size_t total_bytes() const noexcept;

@@ -272,8 +272,8 @@ __global__ void matmul_kernel(float *out, float *left, float *right, int64_t l0,
   out[idx] = acc;
 }
 
-void launch_matmul(void *out, void *left, void *right, int64_t ldims[3],
-                   int64_t rdims[3], size_t total) {
+void launch_matmul(void *out, void *left, void *right, const int64_t ldims[3],
+                   const int64_t rdims[3], size_t total) {
 
   int block = 256;
   int grid = (total + block - 1) / block;

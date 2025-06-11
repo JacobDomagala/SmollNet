@@ -117,9 +117,9 @@ void *Tensor::data() const noexcept {
 
 size_t Tensor::numel() const noexcept { return impl_->elems; }
 
-std::array<int64_t, 3> Tensor::dims() const noexcept { return impl_->sizes; }
+const std::array<int64_t, 3>& Tensor::dims() const noexcept { return impl_->sizes; }
 
-std::array<int64_t, 3> Tensor::strides() const noexcept {
+const std::array<int64_t, 3>& Tensor::strides() const noexcept {
   return impl_->strides;
 }
 
@@ -141,15 +141,15 @@ void Tensor::print_elms() const {
 
   // Could be expensive
   auto t = cpu();
-  const float *data = static_cast<const float *>(t.data());
+  const float *raw_data = static_cast<const float *>(t.data());
 
-  auto sizes = dims();
-  auto stride = strides();
+  const auto& sizes = dims();
+  const auto& stride = strides();
 
   if (ndims() == 1) {
     fmt::print("Tensor: ([");
     for (int64_t i = 0; i < sizes[0]; ++i) {
-      fmt::print("{:.4f}{}", data[i * stride[0]],
+      fmt::print("{:.4f}{}", raw_data[i * stride[0]],
                  i == sizes[0] - 1 ? "" : ",  ");
     }
     fmt::print("])\n");
@@ -158,7 +158,7 @@ void Tensor::print_elms() const {
     for (int64_t i = 0; i < sizes[0]; ++i) {
       fmt::print("[");
       for (int64_t j = 0; j < sizes[1]; ++j) {
-        fmt::print("{:.4f}{}", data[i * stride[0] + j * stride[1]],
+        fmt::print("{:.4f}{}", raw_data[i * stride[0] + j * stride[1]],
                    j == sizes[1] - 1 ? "" : ",  ");
       }
       fmt::print("{}", i == sizes[0] - 1 ? "]" : "],\n          ");
@@ -172,7 +172,7 @@ void Tensor::print_elms() const {
         fmt::print("[");
         for (int64_t k = 0; k < sizes[2]; ++k) {
           fmt::print("{:.4f}{}",
-                     data[k * stride[2] + j * stride[1] + i * stride[0]],
+                     raw_data[k * stride[2] + j * stride[1] + i * stride[0]],
                      k == sizes[2] - 1 ? "" : ",  ");
         }
         fmt::print("{}", j == sizes[1] - 1 ? "]" : "],\n           ");
