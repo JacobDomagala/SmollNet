@@ -1,19 +1,12 @@
 #pragma once
 
+#include "module.hpp"
 #include "tensor.hpp"
 
 #include <memory>
 #include <vector>
 
 namespace smollnet {
-
-struct Module {
-  virtual ~Module() = default;
-  virtual Tensor forward(Tensor &t) = 0;
-  virtual void gradient_update() const = 0;
-  virtual void print() const = 0;
-  virtual std::vector<Tensor> parameters() const = 0;
-};
 
 struct Linear : Module {
   Linear(int64_t in_dim, int64_t out_dim);

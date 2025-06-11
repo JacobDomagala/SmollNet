@@ -517,22 +517,104 @@ void launch_mse_grad(void *grad, void *pred, void *target, float coeff,
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void
-variance_step1_kernel(float* out, float* in, const float mean, const size_t total) {
+__global__ void variance_step1_kernel(float *out, float *in, float *mean,
+                                      const size_t batch_size,
+                                      const size_t num_features) {
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
 
-  if(idx >= total) return;
+  if (idx >= batch_size * num_features)
+    return;
 
-  out[idx] = powf(mean - in[idx], 2);
+  int batch_num = idx / num_features;
+  out[idx] = powf(mean[batch_num] - in[idx], 2);
 }
 
-// void launch_variance(void* out, void* in, float mean, size_t total) {
-//   dim3 block = 256;
-//   dim3 grid = (block.x + total - 1) / block.x;
+__global__ void variance_step2_kernel(float *out, float *in,
+                                      const size_t batch_size,
+                                      const size_t num_features) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
 
-//   variance_step1_kernel<<<grid, block>>>(static_cast<float*>(out), static_cast<float*>(in), mean, total);
+  if (idx >= batch_size)
+    return;
 
-//   k_sum_dim1<<<1, total>>>(const float *__restrict in, float *__restrict out, int64_t d0, int64_t d1, int64_t d2)
-// }
+  float acc = 0.0f;
+
+  for (int i = 0; i < num_features; ++i) {
+    acc += in[idx * num_features + i];
+  }
+
+  acc /= num_features;
+
+  out[idx] = acc;
+}
+
+void launch_variance(void *variance, void *staging_buffer, void *in, void *mean,
+                     size_t batch_size, size_t num_features) {
+  dim3 block = 256;
+  dim3 grid = (block.x + batch_size * num_features - 1) / block.x;
+
+  variance_step1_kernel<<<grid, block>>>(
+      static_cast<float *>(staging_buffer), static_cast<float *>(in),
+      static_cast<float *>(mean), batch_size, num_features);
+
+  variance_step2_kernel<<<grid, block>>>(static_cast<float *>(variance),
+                                         static_cast<float *>(staging_buffer),
+                                         batch_size, num_features);
+}
+
+__global__ void mean_2d_kernel(float *out, float *in, size_t d0, size_t d1) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (idx >= d0)
+    return;
+
+  float acc = 0.0f;
+  for (int i = 0; i < d1; ++i) {
+    acc += in[idx * d1 + i];
+  }
+
+  acc /= d1;
+
+  out[idx] = acc;
+}
+
+void launch_mean_2d(void *out, void *in, size_t d0, size_t d1) {
+  dim3 block = 256;
+  dim3 grid = (block.x + d0 * d1 - 1) / block.x;
+
+  mean_2d_kernel<<<grid, block>>>(static_cast<float *>(out),
+                                  static_cast<float *>(in), d0, d1);
+}
+
+__global__ void layer_norm_kernel(float *out, float *features, float *mean,
+                                  float *variance, float *gamma, float *beta,
+                                  size_t batch_size, size_t num_features) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+  const auto total = batch_size * num_features;
+
+  if (idx >= total)
+    return;
+
+  int batch_num = idx / num_features;
+
+  constexpr float epsilon = 1e-5f;
+  float normalized = (features[idx] - mean[batch_num]) / sqrtf( variance[batch_num] + epsilon);
+
+  out[idx] = gamma[batch_num] * normalized + beta[batch_num];
+}
+
+void launch_layer_norm(void *out, void *features, void *mean, void *variance,
+                       void *gamma, void *beta, size_t batch_size,
+                       size_t num_features) {
+  dim3 block = 256;
+  size_t total = batch_size * num_features;
+  dim3 grid = (block.x + total - 1) / block.x;
+
+  layer_norm_kernel<<<grid, block>>>(
+      static_cast<float *>(out), static_cast<float *>(features),
+      static_cast<float *>(mean), static_cast<float *>(variance),
+      static_cast<float *>(gamma), static_cast<float *>(beta), batch_size,
+      num_features);
+}
 
 } // namespace smollnet
