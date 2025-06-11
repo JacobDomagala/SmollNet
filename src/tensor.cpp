@@ -191,6 +191,58 @@ Tensor Tensor::sum(int64_t dim, bool keep_dim) const {
   return ::smollnet::sum(*this, dim, keep_dim);
 }
 
+Tensor Tensor::mul(Tensor const &other) const {
+  std::array<int64_t, 3> out_sz = {0, 0, 0};
+  bool expand_me = false;
+  bool expand_other = false;
+
+  int64_t out_rank = 0;
+  for (int i = 0; i < 3; ++i) {
+    const auto my_size = size(i);
+    const auto other_size = other.size(i);
+    ASSERT(my_size == other_size or (my_size == 1 or my_size == 0) or
+               (other_size == 1 or other_size == 0),
+           fmt::format("Unable to add non-broadcastable Tensors! [{},{},{}] "
+                       "and [{},{},{}]",
+                       size(0), size(1), size(2), other.size(0), other.size(1),
+                       other.size(2)));
+
+    out_sz[i] = std::max(impl()->sizes[i], other.impl()->sizes[i]);
+
+    if (out_sz[i] > 0) {
+      out_rank++;
+    }
+
+    expand_me |= out_sz[i] != my_size;
+    expand_other |= out_sz[i] != other_size;
+  }
+
+  auto me_alias = expand_me ? expand(out_sz) : *this;
+  auto other_alias = expand_other ? other.expand(out_sz) : other;
+
+  Tensor out = empty(out_sz.data(), out_rank, dtype(), device(),
+                     requires_grad() || other.requires_grad());
+
+  if (!expand_me and !expand_other) {
+    launch_mul(static_cast<float *>(out.data()), static_cast<float *>(data()),
+               static_cast<float *>(other.data()), out.numel());
+  } else {
+    StrideInfo s{};
+    s.rank = out_rank;
+    for (int i = 0; i < s.rank; ++i) {
+      s.size[i] = out_sz[i];
+      s.astr[i] = me_alias.impl()->strides[i];
+      s.bstr[i] = other_alias.impl()->strides[i];
+    }
+
+    launch_mul_strided(out.data(), me_alias.data(), other_alias.data(), s,
+                       out.numel());
+  }
+
+  SetupAutograd<AddFunction>(*this, other, out);
+  return out;
+}
+
 Tensor Tensor::matmul(Tensor const &other) const {
   return ::smollnet::matmul(*this, other);
 }
@@ -525,6 +577,10 @@ Tensor sum(Tensor const &t, int64_t dim, bool keep_dim) {
   return new_tensor;
 }
 
+Tensor mul(Tensor const & left, Tensor const & right) {
+  return left.mul(right);
+}
+
 Tensor mse(Tensor const &pred, Tensor const &target) {
   ASSERT(pred.dims() == target.dims(), "");
 
@@ -542,7 +598,7 @@ Tensor operator+(const Tensor &l, const Tensor &r) { return l.add(r); }
 
 Tensor operator-(const Tensor &l, const Tensor &r) { return l.sub(r); }
 
-Tensor operator*(const Tensor &l, const Tensor &r) { return l.matmul(r); }
+Tensor operator*(const Tensor &l, const Tensor &r) { return l.mul(r); }
 
 Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
              bool requires_grad) {

@@ -42,8 +42,8 @@ AddFunction::backward(const std::vector<Tensor> &grad_outputs) {
     Tensor grad = grad_outputs[0].copy();
 
     auto sizes = inputs[0].dims();
-    for(int dim = 0; dim < inputs[0].ndims(); ++dim) {
-      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+    for (int dim = 0; dim < inputs[0].ndims(); ++dim) {
+      if (sizes[dim] == 1 and grad.size(dim) > 1) {
         grad = sum(grad, dim, true);
       }
     }
@@ -56,8 +56,8 @@ AddFunction::backward(const std::vector<Tensor> &grad_outputs) {
     Tensor grad = grad_outputs[0].copy();
 
     auto sizes = inputs[1].dims();
-    for(int dim = 0; dim < inputs[1].ndims(); ++dim) {
-      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+    for (int dim = 0; dim < inputs[1].ndims(); ++dim) {
+      if (sizes[dim] == 1 and grad.size(dim) > 1) {
         grad = sum(grad, dim, true);
       }
     }
@@ -87,8 +87,8 @@ SubFunction::backward(const std::vector<Tensor> &grad_outputs) {
     Tensor grad = grad_outputs[0].copy();
 
     auto sizes = inputs[0].dims();
-    for(int dim = 0; dim < inputs[0].ndims(); ++dim) {
-      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+    for (int dim = 0; dim < inputs[0].ndims(); ++dim) {
+      if (sizes[dim] == 1 and grad.size(dim) > 1) {
         grad = sum(grad, dim, true);
       }
     }
@@ -101,8 +101,8 @@ SubFunction::backward(const std::vector<Tensor> &grad_outputs) {
     Tensor grad = grad_outputs[0].copy();
 
     auto sizes = inputs[1].dims();
-    for(int dim = 0; dim < inputs[1].ndims(); ++dim) {
-      if(sizes[dim] == 1 and grad.size(dim) > 1) {
+    for (int dim = 0; dim < inputs[1].ndims(); ++dim) {
+      if (sizes[dim] == 1 and grad.size(dim) > 1) {
         grad = sum(grad, dim, true);
       }
     }
@@ -154,16 +154,14 @@ ReLUFunction::ReLUFunction(const Tensor &input) {
 
 std::vector<Tensor>
 ReLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
-    ASSERT(grad_outputs.size() == 1, "ReLU backward expects 1 grad_output");
-    std::vector<Tensor> gi(1);
-    if (needs_input_grad[0]) {
-        gi[0] = create_grad_tensor(inputs[0]);
-        launch_relu_grad(gi[0].data(),
-                             grad_outputs[0].data(),
-                             inputs[0].data(),
-                             gi[0].numel());
-    }
-    return gi;
+  ASSERT(grad_outputs.size() == 1, "ReLU backward expects 1 grad_output");
+  std::vector<Tensor> gi(1);
+  if (needs_input_grad[0]) {
+    gi[0] = create_grad_tensor(inputs[0]);
+    launch_relu_grad(gi[0].data(), grad_outputs[0].data(), inputs[0].data(),
+                     gi[0].numel());
+  }
+  return gi;
 }
 
 // GeLUFunction implementation
@@ -174,16 +172,14 @@ GeLUFunction::GeLUFunction(const Tensor &input) {
 
 std::vector<Tensor>
 GeLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
-    ASSERT(grad_outputs.size() == 1, "GeLU backward expects 1 grad_output");
-    std::vector<Tensor> gi(1);
-    if (needs_input_grad[0]) {
-        gi[0] = create_grad_tensor(inputs[0]);
-        launch_gelu_grad(gi[0].data(),
-                             grad_outputs[0].data(),
-                             inputs[0].data(),
-                             gi[0].numel());
-    }
-    return gi;
+  ASSERT(grad_outputs.size() == 1, "GeLU backward expects 1 grad_output");
+  std::vector<Tensor> gi(1);
+  if (needs_input_grad[0]) {
+    gi[0] = create_grad_tensor(inputs[0]);
+    launch_gelu_grad(gi[0].data(), grad_outputs[0].data(), inputs[0].data(),
+                     gi[0].numel());
+  }
+  return gi;
 }
 
 // TanhFunction implementation
@@ -201,8 +197,8 @@ TanhFunction::backward(const std::vector<Tensor> &grad_outputs) {
 
   if (needs_input_grad[0]) {
     auto grad_input = create_grad_tensor(inputs[0]);
-    launch_tanh_grad(grad_input.data(), grad_outputs.front().data(), inputs[0].data(),
-                     grad_input.numel());
+    launch_tanh_grad(grad_input.data(), grad_outputs.front().data(),
+                     inputs[0].data(), grad_input.numel());
     grad_inputs[0] = grad_input;
   }
 
@@ -225,8 +221,8 @@ SigmoidFunction::backward(const std::vector<Tensor> &grad_outputs) {
   if (needs_input_grad[0]) {
 
     auto grad_input = create_grad_tensor(inputs[0]);
-    launch_sigmoid_grad(grad_input.data(), grad_outputs.front().data(), inputs[0].data(),
-                        grad_input.numel());
+    launch_sigmoid_grad(grad_input.data(), grad_outputs.front().data(),
+                        inputs[0].data(), grad_input.numel());
     grad_inputs[0] = grad_input;
   }
 
@@ -259,26 +255,60 @@ SumFunction::backward(const std::vector<Tensor> &grad_outputs) {
   return grad_inputs;
 }
 
-MseFunction::MseFunction(const Tensor& p, const Tensor& t) {
-    inputs = {p, t};
-    needs_input_grad = {p.requires_grad(), t.requires_grad()};
-    N = p.numel();
+MseFunction::MseFunction(const Tensor &p, const Tensor &t) {
+  inputs = {p, t};
+  needs_input_grad = {p.requires_grad(), t.requires_grad()};
+  N = p.numel();
 }
 
-std::vector<Tensor> MseFunction::backward(const std::vector<Tensor>& go) {
-    ASSERT(go.size() == 1, "MSE backward expects 1 grad_output (scalar)");
-    float c = *static_cast<float*>(go[0].cpu().data()) * (2.f / static_cast<float>(N));
+std::vector<Tensor> MseFunction::backward(const std::vector<Tensor> &go) {
+  ASSERT(go.size() == 1, "MSE backward expects 1 grad_output (scalar)");
+  float c =
+      *static_cast<float *>(go[0].cpu().data()) * (2.f / static_cast<float>(N));
 
-    std::vector<Tensor> gi(2);
-    if (needs_input_grad[0]) {
-        gi[0] = create_grad_tensor(inputs[0]);
-        launch_mse_grad(gi[0].data(), inputs[0].data(), inputs[1].data(),  c, N);
-    }
-    if (needs_input_grad[1]) {
-        gi[1] = create_grad_tensor(inputs[1]);
-        launch_mse_grad(gi[1].data(), inputs[1].data(), inputs[0].data(), -c, N);
-    }
-    return gi;
+  std::vector<Tensor> gi(2);
+  if (needs_input_grad[0]) {
+    gi[0] = create_grad_tensor(inputs[0]);
+    launch_mse_grad(gi[0].data(), inputs[0].data(), inputs[1].data(), c, N);
+  }
+  if (needs_input_grad[1]) {
+    gi[1] = create_grad_tensor(inputs[1]);
+    launch_mse_grad(gi[1].data(), inputs[1].data(), inputs[0].data(), -c, N);
+  }
+  return gi;
+}
+
+LayerNormFunction::LayerNormFunction(const Tensor &mean, const Tensor &variance,
+                                     const Tensor &normalized,
+                                     const Tensor &scale) {
+  inputs.push_back(mean);
+  inputs.push_back(variance);
+  inputs.push_back(normalized);
+  inputs.push_back(scale);
+
+  needs_input_grad = {mean.requires_grad(), variance.requires_grad(),
+                      normalized.requires_grad(), scale.requires_grad()};
+}
+std::vector<Tensor>
+LayerNormFunction::backward(const std::vector<Tensor> &grad_outputs) {
+  ASSERT(grad_outputs.size() == 1, "We expect a single gradient in LayerNorm!");
+  auto normalized_input = inputs[2];
+  normalized_input.print_elms();
+  grad_outputs.front().print_elms();
+
+  auto scaled_gradient = grad_outputs.front() * inputs.back();
+  scaled_gradient.print();
+  scaled_gradient.print_elms();
+
+  auto new_grad =
+      zeros(normalized_input.dims().data(), normalized_input.ndims(),
+            normalized_input.dtype(), normalized_input.device(),
+            normalized_input.requires_grad());
+  launch_layer_norm_grad(new_grad.data(), normalized_input.data(),
+                         scaled_gradient.data(), inputs[1].data(),
+                         normalized_input.size(0), normalized_input.size(1));
+
+  return {new_grad};
 }
 
 // Main backward function - implements reverse-mode automatic differentiation

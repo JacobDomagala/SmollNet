@@ -122,6 +122,51 @@ void launch_add_strided(void *dst, void *a, void *b, const StrideInfo &s,
 }
 
 template <typename T>
+__global__ void mul_kernel(T *out, T *left, T *right, size_t n) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < n)
+    out[idx] = left[idx] * right[idx];
+}
+
+void launch_mul(float *out, float *left, float *right, size_t numElems) {
+  dim3 block(256);
+  dim3 grid((numElems + block.x - 1) / block.x);
+  mul_kernel<<<grid, block>>>(out, left, right, numElems);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void mul_strided_kernel(float *__restrict__ out,
+                                   const float *__restrict__ a,
+                                   const float *__restrict__ b, StrideInfo s,
+                                   size_t total) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= total)
+    return;
+
+  // Decode linear index -> (i,j,k)
+  int dims[3] = {0, 0, 0};
+  compute_dimensions(dims, idx, s);
+
+  int64_t offA =
+      dims[0] * s.astr[0] + dims[1] * s.astr[1] + dims[2] * s.astr[2];
+  int64_t offB =
+      dims[0] * s.bstr[0] + dims[1] * s.bstr[1] + dims[2] * s.bstr[2];
+
+  out[idx] = a[offA] * b[offB];
+}
+
+void launch_mul_strided(void *dst, void *a, void *b, const StrideInfo &s,
+                        size_t total) {
+  dim3 blk(256);
+  dim3 grd((total + blk.x - 1) / blk.x);
+
+  mul_strided_kernel<<<grd, blk>>>(static_cast<float *>(dst),
+                                   static_cast<const float *>(a),
+                                   static_cast<const float *>(b), s, total);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+template <typename T>
 __global__ void sub_kernel(T *out, T *left, T *right, size_t n) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < n)
@@ -616,5 +661,29 @@ void launch_layer_norm(void *out, void *features, void *mean, void *variance,
       static_cast<float *>(gamma), static_cast<float *>(beta), batch_size,
       num_features);
 }
+
+__global__ void
+layer_norm_kernel(float* out_grad, float* normalized_input, float* scaled_gradient, float* variance, size_t batch_size, size_t num_features) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  size_t total = batch_size * num_features;
+  if (idx >= total) return;
+
+
+
+
+}
+
+
+void launch_layer_norm_grad(void *out, void *normalized_input, void *scaled_gradient, void *variance,
+                       size_t batch_size,
+                       size_t num_features) {
+
+                        dim3 block = 256;
+                        size_t total = batch_size * num_features;
+                        dim3 grid = (block.x + total - 1) / block.x;
+
+
+                       }
 
 } // namespace smollnet

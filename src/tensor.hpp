@@ -80,6 +80,7 @@ public:
   Tensor add(Tensor const &other) const;
   Tensor sub(Tensor const &other) const;
   Tensor sum(int64_t dim, bool keep_dim = false) const;
+  Tensor mul(Tensor const &other) const;
   Tensor matmul(Tensor const &other) const;
 
   Tensor transpose(int d0, int d1) const;
@@ -102,6 +103,7 @@ Tensor sigmoid(Tensor &t);
 
 // Operation functions
 Tensor matmul(Tensor const &l, Tensor const &r);
+Tensor mul(Tensor const & left, Tensor const & right);
 Tensor sum(Tensor const &t, int64_t dim, bool keep_dim = false);
 Tensor operator+(Tensor const &l, Tensor const &r);
 Tensor operator-(Tensor const &l, Tensor const &r);

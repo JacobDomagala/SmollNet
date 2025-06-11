@@ -5,16 +5,25 @@
 using namespace smollnet;
 
 int main() {
-  constexpr int input_size = 3;
+  constexpr int input_size = 10;
 
-  auto norm = LayerNorm();
-  Tensor input = rand({input_size, 6}, DataType::f32, Device::CUDA);
-  auto out = norm(input);
+  Tensor input = rand({input_size, 128}, DataType::f32, Device::CUDA);
+  Tensor targets = rand({input_size, 1}, DataType::f32, Device::CUDA);
+  auto targets_h = targets.cpu();
 
-  input.print();
-  input.print_elms();
+  auto net = Dense(Linear(128, 64), GeLU(), Linear(64, 1));
 
-  out.print();
-  out.print_elms();
+  for (int epoch = 0; epoch < 32; ++epoch) {
+    auto res = net.forward(input);
+    auto loss = mse(res, targets);
+    fmt::print("[{}] predicted:{} target:{} loss:{}\n", epoch,
+               static_cast<float *>(res.cpu().data())[0],
+               static_cast<float *>(targets_h.data())[0],
+               static_cast<float *>(loss.cpu().data())[0]);
+    loss.backward();
 
+    auto optim = SGD(net.parameters(), 0.0001f);
+    optim.step();
+    optim.zero_grad();
+  }
 }

@@ -23,6 +23,9 @@ void launch_add_strided(void *dst, void *a, void *b, const StrideInfo &s,
 void launch_sub(float *out, float *a, float *b, size_t numElems);
 void launch_sub_strided(void *out, void *a, void *b, const StrideInfo &s,
                         size_t total);
+void launch_mul(float *out, float *a, float *b, size_t numElems);
+void launch_mul_strided(void *dst, void *a, void *b, const StrideInfo &s,
+                        size_t total);
 
 void launch_sum_dim0(void *out, void *in, int64_t d0, int64_t rest);
 void launch_sum_dim1(void *out, void *in, int64_t d0, int64_t d1, int64_t d2);
@@ -57,4 +60,7 @@ void launch_layer_norm(void *out, void *features, void *mean, void *variance,
                        void *gamma, void *beta, size_t batch_size,
                        size_t num_features);
 
+void launch_layer_norm_grad(void *out, void *normalized_input, void *scaled_gradient, void *variance,
+                       size_t batch_size,
+                       size_t num_features);
 } // namespace smollnet
