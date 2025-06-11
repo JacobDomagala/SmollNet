@@ -73,8 +73,8 @@ public:
   size_t numel() const noexcept;
   std::array<int64_t, 3> dims() const noexcept;
   std::array<int64_t, 3> strides() const noexcept;
-  void print() const noexcept;
-  void print_elms() const noexcept;
+  void print() const;
+  void print_elms() const;
   size_t total_bytes() const noexcept;
 
   Tensor add(Tensor const &other) const;
