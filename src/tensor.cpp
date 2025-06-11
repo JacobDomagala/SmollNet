@@ -57,7 +57,7 @@ TensorImpl::TensorImpl(const int64_t *dims, int64_t rank, DataType type) {
   }
 
   if (rank > 0) {
-    strides[rank - 1] = element_size(type);
+    strides[rank - 1] = 1;
     for (int64_t i = rank - 2; i >= 0; --i) {
       strides[i] = strides[i + 1] * sizes[i + 1];
     }
@@ -117,34 +117,70 @@ void *Tensor::data() const noexcept {
 
 size_t Tensor::numel() const noexcept { return impl_->elems; }
 
-std::array<int64_t, 3> Tensor::dims() const noexcept { return impl_->sizes; }
+const std::array<int64_t, 3>& Tensor::dims() const noexcept { return impl_->sizes; }
 
-std::array<int64_t, 3> Tensor::strides() const noexcept {
+const std::array<int64_t, 3>& Tensor::strides() const noexcept {
   return impl_->strides;
 }
 
-void Tensor::print() const noexcept {
+void Tensor::print() const {
   auto &t = *impl();
-  printf("Tensor: [Refcount: %ld addr: %p Rank: %ld dim(%ld, %ld, %ld) strides(%ld, "
+  printf("Tensor: [Refcount: %ld addr: %p Rank: %ld dim(%ld, %ld, %ld) "
+         "strides(%ld, "
          "%ld, %ld) "
          "dtype:%s requires_grad:%s]\n\t Storage [Refcount: %ld addr: %p]\n",
-         impl_.use_count(), impl_.get(), t.ndim, t.sizes[0], t.sizes[1], t.sizes[2],
-         t.strides[0], t.strides[1], t.strides[2], get_name(t.dtype),
-         requires_grad() ? "true" : "false", t.storage.use_count(),
-         t.storage->ptr);
+         impl_.use_count(), impl_.get(), t.ndim, t.sizes[0], t.sizes[1],
+         t.sizes[2], t.strides[0], t.strides[1], t.strides[2],
+         get_name(t.dtype), requires_grad() ? "true" : "false",
+         t.storage.use_count(), t.storage->ptr);
 }
 
-void Tensor::print_elms() const noexcept {
+void Tensor::print_elms() const {
+  ASSERT(ndims() <= 3,
+           fmt::format("Tensor::print_elms unsupported ndims=={}", ndims()));
+
   // Could be expensive
   auto t = cpu();
+  const float *raw_data = static_cast<const float *>(t.data());
 
-  fmt::print("Tensor: [");
-  // For now we print as contig memory, we can do pretty printing later
-  for (int i = 0; i < t.numel(); ++i) {
-    fmt::print("{}, ", static_cast<float *>(t.data())[i]);
+  const auto& sizes = dims();
+  const auto& stride = strides();
+
+  if (ndims() == 1) {
+    fmt::print("Tensor: ([");
+    for (int64_t i = 0; i < sizes[0]; ++i) {
+      fmt::print("{:.4f}{}", raw_data[i * stride[0]],
+                 i == sizes[0] - 1 ? "" : ",  ");
+    }
+    fmt::print("])\n");
+  } else if (ndims() == 2) {
+    fmt::print("Tensor: ([");
+    for (int64_t i = 0; i < sizes[0]; ++i) {
+      fmt::print("[");
+      for (int64_t j = 0; j < sizes[1]; ++j) {
+        fmt::print("{:.4f}{}", raw_data[i * stride[0] + j * stride[1]],
+                   j == sizes[1] - 1 ? "" : ",  ");
+      }
+      fmt::print("{}", i == sizes[0] - 1 ? "]" : "],\n          ");
+    }
+    fmt::print("])\n");
+  } else if (ndims() == 3) {
+    fmt::print("Tensor: ([");
+    for (int64_t i = 0; i < sizes[0]; ++i) {
+      fmt::print("[");
+      for (int64_t j = 0; j < sizes[1]; ++j) {
+        fmt::print("[");
+        for (int64_t k = 0; k < sizes[2]; ++k) {
+          fmt::print("{:.4f}{}",
+                     raw_data[k * stride[2] + j * stride[1] + i * stride[0]],
+                     k == sizes[2] - 1 ? "" : ",  ");
+        }
+        fmt::print("{}", j == sizes[1] - 1 ? "]" : "],\n           ");
+      }
+      fmt::print("{}", i == sizes[0] - 1 ? "]" : "],\n\n          ");
+    }
+    fmt::print("])\n");
   }
-
-  fmt::print("]\n");
 }
 
 size_t Tensor::total_bytes() const noexcept {
@@ -200,8 +236,8 @@ Tensor Tensor::add(const Tensor &other) const {
     s.rank = out_rank;
     for (int i = 0; i < s.rank; ++i) {
       s.size[i] = out_sz[i];
-      s.astr[i] = me_alias.impl()->strides[i] / sizeof(float); // bytes → floats
-      s.bstr[i] = other_alias.impl()->strides[i] / sizeof(float);
+      s.astr[i] = me_alias.impl()->strides[i];
+      s.bstr[i] = other_alias.impl()->strides[i];
     }
 
     launch_add_strided(out.data(), me_alias.data(), other_alias.data(), s,
@@ -252,8 +288,8 @@ Tensor Tensor::sub(Tensor const &other) const {
     s.rank = out_rank;
     for (int i = 0; i < s.rank; ++i) {
       s.size[i] = out_sz[i];
-      s.astr[i] = me_alias.impl()->strides[i] / sizeof(float); // bytes → floats
-      s.bstr[i] = other_alias.impl()->strides[i] / sizeof(float);
+      s.astr[i] = me_alias.impl()->strides[i];
+      s.bstr[i] = other_alias.impl()->strides[i];
     }
 
     launch_sub_strided(out.data(), me_alias.data(), other_alias.data(), s,

@@ -1,4 +1,4 @@
-name: Static Analysis
+name: Build and Static Analysis
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Run Script
+    - name: Build
       shell: bash
       run: ./build.sh $(pwd)
 
