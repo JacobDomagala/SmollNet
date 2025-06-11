@@ -49,4 +49,6 @@ void launch_sgd_update(void *p, void *g, float lr, size_t total);
 void launch_mse_grad(void *grad, void *pred, void *target, float coeff,
                      size_t total);
 
+// NORM
+void launch_variance(void* out, void* in, float mean, size_t total);
 } // namespace smollnet

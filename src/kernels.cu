@@ -517,4 +517,22 @@ void launch_mse_grad(void *grad, void *pred, void *target, float coeff,
   CHECK_CUDA(cudaGetLastError());
 }
 
+__global__ void
+variance_step1_kernel(float* out, float* in, const float mean, const size_t total) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if(idx >= total) return;
+
+  out[idx] = powf(mean - in[idx], 2);
+}
+
+// void launch_variance(void* out, void* in, float mean, size_t total) {
+//   dim3 block = 256;
+//   dim3 grid = (block.x + total - 1) / block.x;
+
+//   variance_step1_kernel<<<grid, block>>>(static_cast<float*>(out), static_cast<float*>(in), mean, total);
+
+//   k_sum_dim1<<<1, total>>>(const float *__restrict in, float *__restrict out, int64_t d0, int64_t d1, int64_t d2)
+// }
+
 } // namespace smollnet

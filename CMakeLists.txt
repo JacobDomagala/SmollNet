@@ -12,6 +12,7 @@ add_library(${PROJECT_NAME}
     src/neuralnet.cpp
     src/autograd.cpp
     src/sgd.cpp
+    src/layer_norm.cpp
     src/kernels.cu
 )
 
