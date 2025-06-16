@@ -6,17 +6,15 @@
 
 namespace smollnet {
 
-LayerNorm::LayerNorm() {}
-
 Tensor LayerNorm::operator()(const Tensor &t) { return compute(t); }
 
 Tensor LayerNorm::compute(const Tensor &t) {
   if (!weights.initialized()) {
-    weights = ones({t.size(1), 1}, t.dtype(), t.device());
+    weights = ones({t.size(1), 1}, t.dtype(), t.device(), true);
   }
 
   if (!bias.initialized()) {
-    bias = zeros({t.size(1), 1}, t.dtype(), t.device());
+    bias = zeros({t.size(1), 1}, t.dtype(), t.device(), true);
   }
 
   auto mean = zeros({t.size(0), 1}, t.dtype(), t.device());
@@ -36,25 +34,13 @@ Tensor LayerNorm::compute(const Tensor &t) {
     auto* meta = normalized.autograd();
 
     meta->is_leaf = false;
-    meta->grad_fn = std::make_shared<LayerNormFunction>(mean, variance, normalized, weights);
+    meta->grad_fn = std::make_shared<LayerNormFunction>(mean, variance, normalized, t, weights, bias);
   }
 
   return normalized;
 }
 
 Tensor LayerNorm::forward(Tensor &t) { return compute(t); }
-
-void LayerNorm::gradient_update() const {
-  //   if (weights.grad().initialized())
-  //     launch_sgd_update(weights.data(), weights.grad().data(), 1e-5f,
-  //                       weights.numel());
-  //   if (bias.grad().initialized())
-  //     launch_sgd_update(bias.data(), bias.grad().data(), 1e-5f,
-  //     bias.numel());
-
-  //   weights.zero_grad();
-  //   bias.zero_grad();
-}
 
 void LayerNorm::print() const { fmt::print("LayerNorm"); }
 

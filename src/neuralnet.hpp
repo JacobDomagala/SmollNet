@@ -15,22 +15,18 @@ struct Linear : Module {
   std::vector<Tensor> parameters() const override;
   void print() const override;
 
-  void gradient_update() const override;
-
   Tensor weights;
   Tensor bias;
 };
 
 struct ReLU : Module {
   Tensor forward(Tensor &t) override;
-  void gradient_update() const override;
   void print() const override;
   std::vector<Tensor> parameters() const override;
 };
 
 struct GeLU : Module {
   Tensor forward(Tensor &t) override;
-  void gradient_update() const override;
   void print() const override;
   std::vector<Tensor> parameters() const override;
 };

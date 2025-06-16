@@ -71,14 +71,15 @@ TensorImpl::TensorImpl(const int64_t *dims, int64_t rank, DataType type) {
   TENSOR
 */
 
-Tensor::Tensor() : impl_(nullptr) {}
-Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(impl) {}
+Tensor::Tensor(const std::string &name) : impl_(nullptr), name_(name) {}
+Tensor::Tensor(std::shared_ptr<TensorImpl> impl, const std::string &name)
+    : impl_(impl), name_(name) {}
 
 bool Tensor::initialized() const noexcept { return impl_ != nullptr; }
 bool Tensor::expanded() const noexcept { return impl_->expanded; }
 
 TensorImpl *Tensor::impl() const noexcept {
-  ASSERT(impl_, "Trying to use uninitialized Tensor!");
+  ASSERT(impl_, fmt::format("Trying to use uninitialized Tensor: {}", name_));
   return impl_.get();
 }
 
@@ -117,9 +118,11 @@ void *Tensor::data() const noexcept {
 
 size_t Tensor::numel() const noexcept { return impl_->elems; }
 
-const std::array<int64_t, 3>& Tensor::dims() const noexcept { return impl_->sizes; }
+const std::array<int64_t, 3> &Tensor::dims() const noexcept {
+  return impl_->sizes;
+}
 
-const std::array<int64_t, 3>& Tensor::strides() const noexcept {
+const std::array<int64_t, 3> &Tensor::strides() const noexcept {
   return impl_->strides;
 }
 
@@ -137,14 +140,14 @@ void Tensor::print() const {
 
 void Tensor::print_elms() const {
   ASSERT(ndims() <= 3,
-           fmt::format("Tensor::print_elms unsupported ndims=={}", ndims()));
+         fmt::format("Tensor::print_elms unsupported ndims=={}", ndims()));
 
   // Could be expensive
   auto t = cpu();
   const float *raw_data = static_cast<const float *>(t.data());
 
-  const auto& sizes = dims();
-  const auto& stride = strides();
+  const auto &sizes = dims();
+  const auto &stride = strides();
 
   if (ndims() == 1) {
     fmt::print("Tensor: ([");
@@ -200,12 +203,13 @@ Tensor Tensor::mul(Tensor const &other) const {
   for (int i = 0; i < 3; ++i) {
     const auto my_size = size(i);
     const auto other_size = other.size(i);
-    ASSERT(my_size == other_size or (my_size == 1 or my_size == 0) or
-               (other_size == 1 or other_size == 0),
-           fmt::format("Unable to add non-broadcastable Tensors! [{},{},{}] "
-                       "and [{},{},{}]",
-                       size(0), size(1), size(2), other.size(0), other.size(1),
-                       other.size(2)));
+    ASSERT(
+        my_size == other_size or (my_size == 1 or my_size == 0) or
+            (other_size == 1 or other_size == 0),
+        fmt::format("Unable to multiply non-broadcastable Tensors! [{},{},{}] "
+                    "and [{},{},{}]",
+                    size(0), size(1), size(2), other.size(0), other.size(1),
+                    other.size(2)));
 
     out_sz[i] = std::max(impl()->sizes[i], other.impl()->sizes[i]);
 
@@ -239,7 +243,8 @@ Tensor Tensor::mul(Tensor const &other) const {
                        out.numel());
   }
 
-  SetupAutograd<AddFunction>(*this, other, out);
+  out.name_ = fmt::format("{} * {}", name_, other.name_);
+  SetupAutograd<MulFunction>(*this, other, out);
   return out;
 }
 
@@ -296,6 +301,7 @@ Tensor Tensor::add(const Tensor &other) const {
                        out.numel());
   }
 
+  out.name_ = fmt::format("{} + {}", name_, other.name_);
   SetupAutograd<AddFunction>(*this, other, out);
   return out;
 }
@@ -348,6 +354,7 @@ Tensor Tensor::sub(Tensor const &other) const {
                        out.numel());
   }
 
+  out.name_ = fmt::format("{} - {}", name_, other.name_);
   SetupAutograd<SubFunction>(*this, other, out);
   return out;
 }
@@ -368,6 +375,7 @@ Tensor Tensor::transpose(int d0, int d1) const {
 
   Tensor return_tensor;
   return_tensor.impl_ = view;
+  return_tensor.name_ = fmt::format("{} transpose({},{})", name_, d0, d1);
 
   return return_tensor;
 }
@@ -410,7 +418,7 @@ Tensor Tensor::expand(const std::array<int64_t, 3> &new_sz) const {
     v->grad = impl()->grad;
   }
 
-  return Tensor(v);
+  return Tensor(v, fmt::format("{} expand", name_));
 }
 
 Tensor Tensor::cuda() const {
@@ -428,6 +436,7 @@ Tensor Tensor::cuda() const {
                           numel() * element_size(dtype()),
                           cudaMemcpyHostToDevice));
 
+    new_tensor.name_ = fmt::format("{} CUDA", name_);
     return new_tensor;
   }
 }
@@ -447,6 +456,7 @@ Tensor Tensor::cpu() const {
                           numel() * element_size(dtype()),
                           cudaMemcpyDeviceToHost));
 
+    new_tensor.name_ = fmt::format("{} host", name_);
     return new_tensor;
   }
 }
@@ -463,6 +473,7 @@ Tensor Tensor::copy() const {
     memcpy(new_tensor.data(), data(), numel() * element_size(dtype()));
   }
 
+  new_tensor.name_ = fmt::format("{} copy", name_);
   return new_tensor;
 }
 
@@ -472,10 +483,27 @@ Tensor Tensor::copy() const {
 
 Tensor matmul(Tensor const &l, Tensor const &r) {
   // Check dims
+  ASSERT(l.ndims() >= 2 and r.ndims() >= 2,
+         fmt::format("Cannot matrix multiply Tensors with fewer dims than 2! "
+                     "lhs.ndims()={} rhs.ndims()={}",
+                     l.ndims(), r.ndims()));
+
+  // TODO: allow for broadcast
   ASSERT(l.dims().size() == r.dims().size(),
          fmt::format("{} vs {}", l.dims().size(), r.dims().size()));
-  ASSERT(l.dims()[1] == r.dims()[0],
-         fmt::format("{} not equal to {}", l.dims()[1], r.dims()[0]));
+
+  if (l.ndims() == 2) {
+    ASSERT(l.dims()[1] == r.dims()[0],
+           fmt::format("Incorrect matrix size! lhs number of rows ({}) not "
+                       "equal to rhs number of cols ({})",
+                       l.dims()[1], r.dims()[0]));
+  } else {
+    ASSERT(l.dims()[2] == r.dims()[1],
+           fmt::format("Incorrect matrix size! lhs number of rows ({}) not "
+                       "equal to rhs number of cols ({})",
+                       l.dims()[2], r.dims()[1]));
+  }
+
   ASSERT(l.device() == r.device(),
          fmt::format("Device mismatch! {} and {}", get_device_name(l.device()),
                      get_device_name(r.device())));
@@ -489,6 +517,7 @@ Tensor matmul(Tensor const &l, Tensor const &r) {
 
   SetupAutograd<MatmulFunction>(l, r, new_tensor);
 
+  new_tensor.name_ = fmt::format("{} @ {}", l.name_, r.name_);
   return new_tensor;
 }
 
@@ -500,6 +529,7 @@ Tensor relu(Tensor &t) {
 
   SetupAutograd<ReLUFunction>(new_tensor, t);
 
+  new_tensor.name_ = fmt::format("{} ReLU", t.name_);
   return new_tensor;
 }
 
@@ -510,7 +540,7 @@ Tensor gelu(Tensor &t) {
   launch_gelu(new_tensor.data(), t.data(), t.numel());
 
   SetupAutograd<GeLUFunction>(new_tensor, t);
-
+  new_tensor.name_ = fmt::format("{} GeLU", t.name_);
   return new_tensor;
 }
 
@@ -520,7 +550,7 @@ Tensor tanh(Tensor &t) {
 
   launch_tanh(new_tensor.data(), t.data(), t.numel());
   SetupAutograd<TanhFunction>(new_tensor, t);
-
+  new_tensor.name_ = fmt::format("{} tanh", t.name_);
   return new_tensor;
 }
 
@@ -530,7 +560,7 @@ Tensor sigmoid(Tensor &t) {
 
   launch_sigmoid(new_tensor.data(), t.data(), t.numel());
   SetupAutograd<SigmoidFunction>(new_tensor, t);
-
+  new_tensor.name_ = fmt::format("{} sigmoid", t.name_);
   return new_tensor;
 }
 
@@ -574,12 +604,11 @@ Tensor sum(Tensor const &t, int64_t dim, bool keep_dim) {
     launch_sum_dim2(dst, srcp, dims[0], dims[1], dims[2]);
   }
 
+  new_tensor.name_ = fmt::format("{} sum({})", t.name_, dim);
   return new_tensor;
 }
 
-Tensor mul(Tensor const & left, Tensor const & right) {
-  return left.mul(right);
-}
+Tensor mul(Tensor const &left, Tensor const &right) { return left.mul(right); }
 
 Tensor mse(Tensor const &pred, Tensor const &target) {
   ASSERT(pred.dims() == target.dims(), "");
@@ -590,7 +619,7 @@ Tensor mse(Tensor const &pred, Tensor const &target) {
   launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
 
   SetupAutograd<MseFunction>(pred, target, new_tensor);
-
+  new_tensor.name_ = fmt::format("{} mse", pred.name_, target.name_);
   return new_tensor;
 }
 

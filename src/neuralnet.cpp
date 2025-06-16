@@ -11,9 +11,7 @@ Linear::Linear(int64_t in_dim, int64_t out_dim) {
   bias = zeros({1, out_dim}, DataType::f32, Device::CUDA, true);
 }
 
-Tensor Linear::forward(Tensor &t) {
-  return matmul(t, weights).add(bias);
-}
+Tensor Linear::forward(Tensor &t) { return matmul(t, weights).add(bias); }
 
 void Linear::print() const {
   printf("Linear layer [\n\tWeights: ");
@@ -24,26 +22,13 @@ void Linear::print() const {
   printf("]\n");
 }
 
-void Linear::gradient_update() const {
-  if (weights.grad().initialized())
-    launch_sgd_update(weights.data(), weights.grad().data(), 0.001f,
-                      weights.numel());
-  if (bias.grad().initialized())
-    launch_sgd_update(bias.data(), bias.grad().data(), 0.001f, bias.numel());
-
-  weights.zero_grad();
-  bias.zero_grad();
-}
-
 std::vector<Tensor> Linear::parameters() const { return {weights, bias}; }
 
 Tensor ReLU::forward(Tensor &t) { return relu(t); }
-void ReLU::gradient_update() const {}
 std::vector<Tensor> ReLU::parameters() const { return {}; }
 void ReLU::print() const { printf("ReLU\n"); }
 
 Tensor GeLU::forward(Tensor &t) { return gelu(t); }
-void GeLU::gradient_update() const {}
 std::vector<Tensor> GeLU::parameters() const { return {}; }
 void GeLU::print() const { printf("GeLU\n"); }
 

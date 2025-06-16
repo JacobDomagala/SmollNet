@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <fmt/base.h>
 #include <memory>
 
 namespace smollnet {
@@ -46,8 +47,9 @@ class Tensor {
   std::shared_ptr<TensorImpl> impl_ = nullptr;
 
 public:
-  Tensor();
-  Tensor(std::shared_ptr<TensorImpl> impl);
+  std::string name_ = "empty";
+  Tensor(const std::string& name = "empty");
+  Tensor(std::shared_ptr<TensorImpl> impl, const std::string& name = "empty");
 
   Tensor &operator=(const Tensor &o) noexcept = default;
   Tensor &operator=(Tensor &&o) noexcept = default;

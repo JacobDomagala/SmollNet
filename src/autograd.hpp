@@ -42,6 +42,14 @@ struct SubFunction : Function {
   void print() const override { printf("SubFunction\n"); }
 };
 
+
+struct MulFunction : Function {
+  MulFunction(const Tensor &lhs, const Tensor &rhs);
+  std::vector<Tensor>
+  backward(const std::vector<Tensor> &grad_outputs) override;
+  void print() const override { printf("MulFunction\n"); }
+};
+
 struct MatmulFunction : Function {
   MatmulFunction(const Tensor &lhs, const Tensor &rhs);
   std::vector<Tensor>
@@ -106,7 +114,8 @@ private:
 
 struct LayerNormFunction : Function {
   LayerNormFunction(const Tensor &mean, const Tensor &variance,
-                    const Tensor &normalized, const Tensor &scale);
+                                     const Tensor &normalized, const Tensor& original,
+                                     const Tensor &scale, const Tensor &bias);
   std::vector<Tensor>
   backward(const std::vector<Tensor> &grad_outputs) override;
   void print() const override { printf("LayerNorm\n"); }

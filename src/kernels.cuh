@@ -60,7 +60,8 @@ void launch_layer_norm(void *out, void *features, void *mean, void *variance,
                        void *gamma, void *beta, size_t batch_size,
                        size_t num_features);
 
-void launch_layer_norm_grad(void *out, void *normalized_input, void *scaled_gradient, void *variance,
-                       size_t batch_size,
-                       size_t num_features);
+void launch_layer_norm_grad(void *out, void *normalized_input,
+                            void *scaled_gradient, void *variance,
+                            void *summed_scale, void *summed_scaled_input,
+                            size_t batch_size, size_t num_features);
 } // namespace smollnet

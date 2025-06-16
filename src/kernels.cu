@@ -643,7 +643,8 @@ __global__ void layer_norm_kernel(float *out, float *features, float *mean,
   int batch_num = idx / num_features;
 
   constexpr float epsilon = 1e-5f;
-  float normalized = (features[idx] - mean[batch_num]) / sqrtf( variance[batch_num] + epsilon);
+  float normalized =
+      (features[idx] - mean[batch_num]) / sqrtf(variance[batch_num] + epsilon);
 
   out[idx] = gamma[batch_num] * normalized + beta[batch_num];
 }
@@ -662,28 +663,45 @@ void launch_layer_norm(void *out, void *features, void *mean, void *variance,
       num_features);
 }
 
-__global__ void
-layer_norm_kernel(float* out_grad, float* normalized_input, float* scaled_gradient, float* variance, size_t batch_size, size_t num_features) {
-  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+__global__ void layer_norm_grad_kernel(float *out_grad,
+                                       const float *normalized_input,
+                                       const float *scaled_gradient,
+                                       const float *variance,
+                                       const float *summed_scale,
+                                       const float *summed_scaled_input,
+                                       size_t batch_size, size_t num_features) {
+  const size_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+  const size_t total = batch_size * num_features;
+  if (idx >= total)
+    return;
 
-  size_t total = batch_size * num_features;
-  if (idx >= total) return;
+  const size_t row = idx / num_features;
 
+  constexpr float eps = 1e-5f;
+  const float inv_std = rsqrtf(variance[row] + eps); // per-sample variance
+  const float m1 = summed_scale[row] / num_features; // Σδ / D
+  const float m2 = summed_scaled_input[row] / num_features; // Σδ·ẋ / D
 
+  const float hat_x = normalized_input[idx];
+  const float delta = scaled_gradient[idx]; // δ = dy * γ
 
-
+  const float res = inv_std * (delta - m1 - hat_x * m2); // ∂L/∂x
+  out_grad[idx] = res;
 }
 
+void launch_layer_norm_grad(void *out, void *normalized_input,
+                            void *scaled_gradient, void *variance,
+                            void *summed_scale, void *summed_scaled_input,
+                            size_t batch_size, size_t num_features) {
 
-void launch_layer_norm_grad(void *out, void *normalized_input, void *scaled_gradient, void *variance,
-                       size_t batch_size,
-                       size_t num_features) {
-
-                        dim3 block = 256;
-                        size_t total = batch_size * num_features;
-                        dim3 grid = (block.x + total - 1) / block.x;
-
-
-                       }
+  dim3 block = 256;
+  size_t total = batch_size * num_features;
+  dim3 grid = (block.x + total - 1) / block.x;
+  layer_norm_grad_kernel<<<grid, block>>>(
+      static_cast<float *>(out), static_cast<float *>(normalized_input),
+      static_cast<float *>(scaled_gradient), static_cast<float *>(variance),
+      static_cast<float *>(summed_scale),
+      static_cast<float *>(summed_scaled_input), batch_size, num_features);
+}
 
 } // namespace smollnet
