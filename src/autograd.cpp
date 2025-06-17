@@ -2,6 +2,7 @@
 #include "helpers.hpp"
 #include "kernels.cuh"
 
+#include <algorithm>
 #include <queue>
 #include <unordered_set>
 
@@ -9,12 +10,9 @@ namespace smollnet {
 
 // Helper function to check if any tensor requires grad
 bool any_requires_grad(const std::vector<Tensor> &tensors) {
-  for (const auto &tensor : tensors) {
-    if (tensor.initialized() && tensor.requires_grad()) {
-      return true;
-    }
-  }
-  return false;
+  return std::ranges::any_of(tensors, [](const auto &t) {
+    return t.initialized() and t.requires_grad();
+  });
 }
 
 // Create a gradient tensor with the same shape as input
@@ -158,10 +156,10 @@ MulFunction::backward(const std::vector<Tensor> &grad_outputs) {
 }
 
 // MatmulFunction implementation
-MatmulFunction::MatmulFunction(const Tensor &lhs, const Tensor &rhs) {
+MatmulFunction::MatmulFunction(const Tensor &lhs, const Tensor &rhs)
+    : lhs_shape(lhs.dims()), rhs_shape(rhs.dims()) {
   inputs = {lhs, rhs};
-  lhs_shape = lhs.dims();
-  rhs_shape = rhs.dims();
+
   needs_input_grad = {lhs.initialized() && lhs.requires_grad(),
                       rhs.initialized() && rhs.requires_grad()};
 }
@@ -172,7 +170,7 @@ MatmulFunction::backward(const std::vector<Tensor> &grad_outputs) {
          "MatmulFunction expects exactly one gradient output");
 
   std::vector<Tensor> grad_inputs(2);
-  auto &grad_output = const_cast<Tensor &>(grad_outputs[0]);
+  const auto &grad_output = grad_outputs[0];
 
   if (needs_input_grad[0]) {
     // grad_lhs = grad_output @ rhs.T
@@ -273,9 +271,8 @@ SigmoidFunction::backward(const std::vector<Tensor> &grad_outputs) {
 }
 
 // SumFunction implementation
-SumFunction::SumFunction(const Tensor &input, int64_t dim) : dim_(dim) {
+SumFunction::SumFunction(const Tensor &input, int64_t dim) : dim_(dim), input_shape_(input.dims()) {
   inputs = {input};
-  input_shape_ = input.dims();
   needs_input_grad = {input.initialized() && input.requires_grad()};
 }
 
@@ -298,16 +295,15 @@ SumFunction::backward(const std::vector<Tensor> &grad_outputs) {
   return grad_inputs;
 }
 
-MseFunction::MseFunction(const Tensor &p, const Tensor &t) {
-  inputs = {p, t};
-  needs_input_grad = {p.requires_grad(), t.requires_grad()};
-  N = p.numel();
+MseFunction::MseFunction(const Tensor &pred, const Tensor &tgt) : N(pred.numel()) {
+  inputs = {pred, tgt};
+  needs_input_grad = {pred.requires_grad(), tgt.requires_grad()};
 }
 
-std::vector<Tensor> MseFunction::backward(const std::vector<Tensor> &go) {
-  ASSERT(go.size() == 1, "MSE backward expects 1 grad_output (scalar)");
+std::vector<Tensor> MseFunction::backward(const std::vector<Tensor> &grad_outputs) {
+  ASSERT(grad_outputs.size() == 1, "MSE backward expects 1 grad_output (scalar)");
   float c =
-      *static_cast<float *>(go[0].cpu().data()) * (2.f / static_cast<float>(N));
+      *static_cast<float *>(grad_outputs[0].cpu().data()) * (2.f / static_cast<float>(N));
 
   std::vector<Tensor> gi(2);
   if (needs_input_grad[0]) {
@@ -379,8 +375,6 @@ void backward(Tensor &tensor, const Tensor &grad_output) {
   ASSERT(tensor.initialized(), "Cannot compute gradients for null tensor");
   ASSERT(tensor.requires_grad(), "Tensor does not require gradients");
 
-  auto *meta = tensor.autograd();
-
   // Initialize gradient if not provided
   Tensor grad;
   if (grad_output.initialized()) {
@@ -431,8 +425,8 @@ void backward(Tensor &tensor, const Tensor &grad_output) {
       auto input_grads = current_meta->grad_fn->backward({current_grad});
 
       for (size_t i = 0; i < input_grads.size(); ++i) {
-        if (input_grads[i].initialized() &&
-            i < current_meta->grad_fn->inputs.size()) {
+        if (i < current_meta->grad_fn->inputs.size() &&
+            input_grads[i].initialized()) {
           ready_queue.push({current_meta->grad_fn->inputs[i], input_grads[i]});
         }
       }

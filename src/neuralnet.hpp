@@ -42,9 +42,8 @@ public:
   Tensor forward(const Tensor &input) const;
   std::vector<Tensor> parameters() const;
 
-  void train(Tensor &input, Tensor &targets,
-             Optimizer optimizer = Optimizer::SGD, float lr = 0.0001f,
-             int32_t num_epochs = 32) const;
+  void train(const Tensor &input, const Tensor &targets,
+             const float lr = 0.0001f, const int32_t num_epochs = 32) const;
 
   void print() const noexcept;
 

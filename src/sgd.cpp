@@ -6,8 +6,8 @@
 
 namespace smollnet {
 
-void SGD::step() {
-  for (auto &p : params_) {
+void SGD::step() const {
+  for (const auto &p : params_) {
     ASSERT(
         p.size(0) == p.grad().size(0),
         fmt::format("Size 0 mismatch!: {} vs {}", p.size(0), p.grad().size(0)));
@@ -22,8 +22,8 @@ void SGD::step() {
   }
 }
 
-void SGD::zero_grad() {
-  for (auto &p : params_) {
+void SGD::zero_grad() const {
+  for (const auto &p : params_) {
     p.zero_grad();
   }
 }

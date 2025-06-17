@@ -97,9 +97,10 @@ void Tensor::zero_grad() const {
 bool Tensor::requires_grad() const noexcept { return impl()->requires_grad; }
 
 Tensor Tensor::grad() const noexcept {
-  ASSERT(impl()->grad, "Accessing uninitialized gradient!");
+  auto grad_ptr = impl()->grad;
+  ASSERT(grad_ptr, "Accessing uninitialized gradient!");
 
-  return impl()->grad->grad;
+  return grad_ptr->grad;
 }
 
 AutogradMeta *Tensor::autograd() const noexcept { return impl()->grad.get(); }
@@ -629,12 +630,12 @@ Tensor operator-(const Tensor &l, const Tensor &r) { return l.sub(r); }
 
 Tensor operator*(const Tensor &l, const Tensor &r) { return l.mul(r); }
 
-Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
+Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d,
              bool requires_grad) {
   auto storage = std::make_shared<Storage>();
 
   float *ptr;
-  size_t bytes = element_size(data) * product(dims, rank);
+  size_t bytes = element_size(t) * product(dims, rank);
   if (d == Device::CUDA) {
     CHECK_CUDA(cudaMalloc(&ptr, bytes));
   } else {
@@ -644,7 +645,7 @@ Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
   storage->ptr = ptr;
   storage->device = d;
 
-  auto impl = std::make_shared<TensorImpl>(dims, rank, data);
+  auto impl = std::make_shared<TensorImpl>(dims, rank, t);
   impl->storage = storage;
   impl->requires_grad = requires_grad;
   if (requires_grad) {
@@ -654,30 +655,30 @@ Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
   return Tensor(impl);
 }
 
-Tensor zeros(const int64_t *dims, size_t rank, DataType data, Device d,
+Tensor zeros(const int64_t *dims, size_t rank, DataType t, Device d,
              bool requires_grad) {
-  auto tensor = empty(dims, rank, data, d, requires_grad);
+  auto tensor = empty(dims, rank, t, d, requires_grad);
   if (d == Device::CUDA) {
     CHECK_CUDA(
-        cudaMemset(tensor.data(), 0, element_size(data) * product(dims, rank)));
+        cudaMemset(tensor.data(), 0, element_size(t) * product(dims, rank)));
   } else {
-    memset(tensor.data(), 0, element_size(data) * product(dims, rank));
+    memset(tensor.data(), 0, element_size(t) * product(dims, rank));
   }
   return tensor;
 }
 
-Tensor ones(const int64_t *dims, size_t rank, DataType data, Device d,
+Tensor ones(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad) {
-  auto tensor = empty(dims, rank, data, d, requires_grad);
+  auto tensor = empty(dims, rank, t, d, requires_grad);
 
   launch_fill(static_cast<float *>(tensor.data()), tensor.numel(), 1.0f);
 
   return Tensor{tensor};
 }
 
-Tensor rand(const int64_t *dims, size_t rank, DataType data, Device d,
+Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad) {
-  auto tensor = empty(dims, rank, data, d, requires_grad);
+  auto tensor = empty(dims, rank, t, d, requires_grad);
 
   launch_random_init(tensor.data(), tensor.numel());
 

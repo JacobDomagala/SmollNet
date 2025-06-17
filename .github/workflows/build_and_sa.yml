@@ -33,7 +33,7 @@ jobs:
         comment_title: UBUNTU COMPILE RESULT
         compile_result_file: ${{ github.workspace }}/build/output.txt
 
-    - name: setup init_script
+    - name: Setup init_script
       shell: bash
       run: |
         echo "#!/bin/bash

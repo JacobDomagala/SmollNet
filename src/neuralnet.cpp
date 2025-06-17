@@ -1,15 +1,13 @@
 #include "neuralnet.hpp"
-#include "kernels.cuh"
 #include "sgd.hpp"
 
 #include <fmt/core.h>
 
 namespace smollnet {
 
-Linear::Linear(int64_t in_dim, int64_t out_dim) {
-  weights = rand({in_dim, out_dim}, DataType::f32, Device::CUDA, true);
-  bias = zeros({1, out_dim}, DataType::f32, Device::CUDA, true);
-}
+Linear::Linear(int64_t in_dim, int64_t out_dim)
+    : weights(rand({in_dim, out_dim}, DataType::f32, Device::CUDA, true)),
+      bias(zeros({1, out_dim}, DataType::f32, Device::CUDA, true)) {}
 
 Tensor Linear::forward(Tensor &t) { return matmul(t, weights).add(bias); }
 
@@ -34,7 +32,7 @@ void GeLU::print() const { printf("GeLU\n"); }
 
 Tensor Dense::forward(const Tensor &input) const {
   Tensor output = input;
-  for (auto &layer : layers_) {
+  for (const auto &layer : layers_) {
     output = layer->forward(output);
   }
   return output;
@@ -43,7 +41,7 @@ Tensor Dense::forward(const Tensor &input) const {
 std::vector<Tensor> Dense::parameters() const {
   std::vector<Tensor> params;
 
-  for (auto &layer : layers_) {
+  for (const auto &layer : layers_) {
     auto layer_params = layer->parameters();
     params.insert(params.end(), layer_params.begin(), layer_params.end());
   }
@@ -51,8 +49,8 @@ std::vector<Tensor> Dense::parameters() const {
   return params;
 }
 
-void Dense::train(Tensor &input, Tensor &targets, Optimizer optimizer, float lr,
-                  int32_t num_epochs) const {
+void Dense::train(const Tensor &input, const Tensor &targets, const float lr,
+                  const int32_t num_epochs) const {
   auto features = input.copy();
 
   auto optim = SGD(std::move(parameters()), lr);
@@ -70,8 +68,8 @@ void Dense::train(Tensor &input, Tensor &targets, Optimizer optimizer, float lr,
 }
 
 void Dense::print() const noexcept {
-  printf("Dense neural network [num_layers: %ld]\n", layers_.size());
-  for (auto &layer : layers_) {
+  fmt::print("Dense neural network [num_layers: {}]\n", layers_.size());
+  for (const auto &layer : layers_) {
     layer->print();
   }
 }

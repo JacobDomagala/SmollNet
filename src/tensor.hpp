@@ -48,8 +48,8 @@ class Tensor {
 
 public:
   std::string name_ = "empty";
-  Tensor(const std::string& name = "empty");
-  Tensor(std::shared_ptr<TensorImpl> impl, const std::string& name = "empty");
+  explicit Tensor(const std::string& name = "empty");
+  explicit Tensor(std::shared_ptr<TensorImpl> impl, const std::string& name = "empty");
 
   Tensor &operator=(const Tensor &o) noexcept = default;
   Tensor &operator=(Tensor &&o) noexcept = default;
@@ -86,7 +86,7 @@ public:
   Tensor matmul(Tensor const &other) const;
 
   Tensor transpose(int d0, int d1) const;
-  Tensor expand(const std::array<int64_t, 3> &new_dims) const;
+  Tensor expand(const std::array<int64_t, 3> &new_sz) const;
 
   Tensor cuda() const;
   Tensor cpu() const;

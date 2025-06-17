@@ -42,7 +42,6 @@ struct SubFunction : Function {
   void print() const override { printf("SubFunction\n"); }
 };
 
-
 struct MulFunction : Function {
   MulFunction(const Tensor &lhs, const Tensor &rhs);
   std::vector<Tensor>
@@ -62,28 +61,28 @@ private:
 };
 
 struct ReLUFunction : Function {
-  ReLUFunction(const Tensor &input);
+  explicit ReLUFunction(const Tensor &input);
   std::vector<Tensor>
   backward(const std::vector<Tensor> &grad_outputs) override;
   void print() const override { printf("ReLUFunction\n"); }
 };
 
 struct GeLUFunction : Function {
-  GeLUFunction(const Tensor &input);
+  explicit GeLUFunction(const Tensor &input);
   std::vector<Tensor>
   backward(const std::vector<Tensor> &grad_outputs) override;
   void print() const override { printf("GeLUFunction\n"); }
 };
 
 struct TanhFunction : Function {
-  TanhFunction(const Tensor &input);
+  explicit TanhFunction(const Tensor &input);
   std::vector<Tensor>
   backward(const std::vector<Tensor> &grad_outputs) override;
   void print() const override { printf("TanhFunction\n"); }
 };
 
 struct SigmoidFunction : Function {
-  SigmoidFunction(const Tensor &input);
+  explicit SigmoidFunction(const Tensor &input);
   std::vector<Tensor>
   backward(const std::vector<Tensor> &grad_outputs) override;
   void print() const override { printf("SigmoidFunction\n"); }
@@ -108,14 +107,12 @@ struct MseFunction : Function {
 
 private:
   size_t N;
-  int64_t dim_;
-  std::array<int64_t, 3> input_shape_;
 };
 
 struct LayerNormFunction : Function {
   LayerNormFunction(const Tensor &mean, const Tensor &variance,
-                                     const Tensor &normalized, const Tensor& original,
-                                     const Tensor &scale, const Tensor &bias);
+                    const Tensor &normalized, const Tensor &original,
+                    const Tensor &scale, const Tensor &bias);
   std::vector<Tensor>
   backward(const std::vector<Tensor> &grad_outputs) override;
   void print() const override { printf("LayerNorm\n"); }
