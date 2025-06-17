@@ -615,8 +615,7 @@ Tensor mse(Tensor const &pred, Tensor const &target) {
   ASSERT(pred.dims() == target.dims(), "");
 
   bool requires_grad = any_requires_grad({pred, target});
-  auto new_tensor = zeros({pred.size(0), pred.size(1)}, pred.dtype(),
-                          pred.device(), requires_grad);
+  auto new_tensor = zeros({1}, pred.dtype(),pred.device(), requires_grad);
   launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
 
   SetupAutograd<MseFunction>(pred, target, new_tensor);
