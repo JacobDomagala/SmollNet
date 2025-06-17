@@ -122,6 +122,13 @@ void launch_add_strided(void *dst, void *a, void *b, const StrideInfo &s,
 }
 
 template <typename T>
+__global__ void mul_kernel(T *out, T *left, T scalar, size_t n) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < n)
+    out[idx] = left[idx] * scalar;
+}
+
+template <typename T>
 __global__ void mul_kernel(T *out, T *left, T *right, size_t n) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < n)
@@ -490,43 +497,41 @@ void launch_sigmoid_grad(void *out, void *grad_out, void *in, size_t total) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void mse_square_kernel(float *out, float *pred, float *target,
-                                  size_t total) {
-  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+__global__ void mse_kernel(float* out,
+                           const float* __restrict__ pred,
+                           const float* __restrict__ target,
+                           std::size_t n) {
+  extern __shared__ float sdata[];
+  std::size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  std::size_t stride = blockDim.x * gridDim.x;
+  float local_sum = 0.0f;
 
-  if (idx >= total)
-    return;
-
-  out[idx] = powf((pred[idx] - target[idx]), 2.0f);
-}
-
-__global__ void mse_sum_kernel(float *out, float *in, size_t N) {
-  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
-
-  if (idx > 0)
-    return;
-
-  float acc = 0.0f;
-  for (int i = 0; i < N; ++i) {
-    acc += in[i];
+  for (; idx < n; idx += stride) {
+    float diff = pred[idx] - target[idx];
+    local_sum += diff * diff;
   }
 
-  out[idx] = acc / N;
+  sdata[threadIdx.x] = local_sum;
+  __syncthreads();
+
+  // reduction in shared memory
+  for (std::size_t offset = blockDim.x / 2; offset > 0; offset >>= 1) {
+    if (threadIdx.x < offset) sdata[threadIdx.x] += sdata[threadIdx.x + offset];
+    __syncthreads();
+  }
+
+  if (threadIdx.x == 0) atomicAdd(out, sdata[0]);
 }
 
 void launch_mse(void *out, void *pred, void *target, size_t total) {
   int block = 256;
   int grid = (total + block - 1) / block;
 
-  mse_square_kernel<<<grid, block>>>(static_cast<float *>(out),
+  mse_kernel<<<grid, block, block * sizeof(float)>>>(static_cast<float *>(out),
                                      static_cast<float *>(pred),
                                      static_cast<float *>(target), total);
 
-  CHECK_CUDA(cudaGetLastError());
-
-  mse_sum_kernel<<<grid, block>>>(static_cast<float *>(out),
-                                  static_cast<float *>(out), total);
-
+  mul_kernel<<<1,1>>>(static_cast<float *>(out), static_cast<float *>(out), 1.0f / static_cast<float>(total), 1);
   CHECK_CUDA(cudaGetLastError());
 }
 __global__ void sgd_kernel(float *w, const float *grad, float lr,

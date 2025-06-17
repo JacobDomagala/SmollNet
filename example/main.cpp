@@ -13,17 +13,22 @@ int main() {
 
   auto net = Dense(Linear(128, 64), LayerNorm(), GeLU(), Linear(64, 1));
 
-  for (int epoch = 0; epoch < 32; ++epoch) {
+  for (int epoch = 0; epoch < 64; ++epoch) {
     auto res = net.forward(input);
     auto loss = mse(res, targets);
-    fmt::print("[{}] predicted:{} target:{} loss:{}\n", epoch,
-               static_cast<float *>(res.cpu().data())[0],
-               static_cast<float *>(targets_h.data())[0],
-               static_cast<float *>(loss.cpu().data())[0]);
+
     loss.backward();
 
-    auto optim = SGD(net.parameters(), 0.001f);
+    auto optim = SGD(net.parameters(), 0.005f);
     optim.step();
     optim.zero_grad();
   }
+
+  targets.print_elms();
+
+  auto predicted = net.forward(input);
+  predicted.print_elms();
+
+  auto loss = mse(predicted, targets);
+  loss.print_elms();
 }
