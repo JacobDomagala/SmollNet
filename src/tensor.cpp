@@ -72,8 +72,7 @@ TensorImpl::TensorImpl(const int64_t *dims, int64_t rank, DataType type) {
 */
 
 Tensor::Tensor() : impl_(nullptr) {}
-Tensor::Tensor(std::shared_ptr<TensorImpl> impl)
-    : impl_(impl) {}
+Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(impl) {}
 
 bool Tensor::initialized() const noexcept { return impl_ != nullptr; }
 bool Tensor::expanded() const noexcept { return impl_->expanded; }
@@ -506,8 +505,35 @@ Tensor matmul(Tensor const &l, Tensor const &r) {
   Tensor new_tensor =
       empty({l.dims()[0], r.dims()[1]}, l.dtype(), l.device(), needs_grad);
 
-  launch_matmul(new_tensor.data(), l.data(), r.data(), l.dims().data(),
-                r.dims().data(), new_tensor.numel());
+  StrideInfo stride_info;
+  stride_info.output_size[0] = new_tensor.size(0);
+  stride_info.output_size[1] = new_tensor.size(1);
+
+  const auto &l_strides = l.strides();
+  ;
+  stride_info.a_stride[0] = l_strides[0];
+  stride_info.a_stride[1] = l_strides[1];
+  stride_info.a_stride[2] = l_strides[2];
+
+  const auto &r_strides = r.strides();
+  ;
+  stride_info.b_stride[0] = r_strides[0];
+  stride_info.b_stride[1] = r_strides[1];
+  stride_info.b_stride[2] = r_strides[2];
+
+  stride_info.rank = new_tensor.ndims();
+
+  SizeInfo size_info;
+  size_info.a_size[0] = l.size(0);
+  size_info.a_size[1] = l.size(1);
+  size_info.a_size[2] = l.size(2);
+
+  size_info.b_size[0] = r.size(0);
+  size_info.b_size[1] = r.size(1);
+  size_info.b_size[2] = r.size(2);
+
+  launch_matmul(new_tensor.data(), l.data(), r.data(), stride_info, size_info,
+                new_tensor.numel());
 
   SetupAutograd<MatmulFunction>(l, r, new_tensor);
 
@@ -602,7 +628,7 @@ Tensor mse(Tensor const &pred, Tensor const &target) {
   ASSERT(pred.dims() == target.dims(), "");
 
   bool requires_grad = any_requires_grad({pred, target});
-  auto new_tensor = zeros({1}, pred.dtype(),pred.device(), requires_grad);
+  auto new_tensor = zeros({1}, pred.dtype(), pred.device(), requires_grad);
   launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
 
   SetupAutograd<MseFunction>(pred, target, new_tensor);
