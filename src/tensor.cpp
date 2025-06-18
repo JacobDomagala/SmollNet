@@ -71,15 +71,15 @@ TensorImpl::TensorImpl(const int64_t *dims, int64_t rank, DataType type) {
   TENSOR
 */
 
-Tensor::Tensor(const std::string &name) : impl_(nullptr), name_(name) {}
-Tensor::Tensor(std::shared_ptr<TensorImpl> impl, const std::string &name)
-    : impl_(impl), name_(name) {}
+Tensor::Tensor() : impl_(nullptr) {}
+Tensor::Tensor(std::shared_ptr<TensorImpl> impl)
+    : impl_(impl) {}
 
 bool Tensor::initialized() const noexcept { return impl_ != nullptr; }
 bool Tensor::expanded() const noexcept { return impl_->expanded; }
 
 TensorImpl *Tensor::impl() const noexcept {
-  ASSERT(impl_, fmt::format("Trying to use uninitialized Tensor: {}", name_));
+  ASSERT(impl_, "Trying to use uninitialized Tensor!");
   return impl_.get();
 }
 
@@ -235,16 +235,15 @@ Tensor Tensor::mul(Tensor const &other) const {
     StrideInfo s{};
     s.rank = out_rank;
     for (int i = 0; i < s.rank; ++i) {
-      s.size[i] = out_sz[i];
-      s.astr[i] = me_alias.impl()->strides[i];
-      s.bstr[i] = other_alias.impl()->strides[i];
+      s.output_size[i] = out_sz[i];
+      s.a_stride[i] = me_alias.impl()->strides[i];
+      s.b_stride[i] = other_alias.impl()->strides[i];
     }
 
     launch_mul_strided(out.data(), me_alias.data(), other_alias.data(), s,
                        out.numel());
   }
 
-  out.name_ = fmt::format("{} * {}", name_, other.name_);
   SetupAutograd<MulFunction>(*this, other, out);
   return out;
 }
@@ -293,16 +292,15 @@ Tensor Tensor::add(const Tensor &other) const {
     StrideInfo s{};
     s.rank = out_rank;
     for (int i = 0; i < s.rank; ++i) {
-      s.size[i] = out_sz[i];
-      s.astr[i] = me_alias.impl()->strides[i];
-      s.bstr[i] = other_alias.impl()->strides[i];
+      s.output_size[i] = out_sz[i];
+      s.a_stride[i] = me_alias.impl()->strides[i];
+      s.b_stride[i] = other_alias.impl()->strides[i];
     }
 
     launch_add_strided(out.data(), me_alias.data(), other_alias.data(), s,
                        out.numel());
   }
 
-  out.name_ = fmt::format("{} + {}", name_, other.name_);
   SetupAutograd<AddFunction>(*this, other, out);
   return out;
 }
@@ -346,16 +344,15 @@ Tensor Tensor::sub(Tensor const &other) const {
     StrideInfo s{};
     s.rank = out_rank;
     for (int i = 0; i < s.rank; ++i) {
-      s.size[i] = out_sz[i];
-      s.astr[i] = me_alias.impl()->strides[i];
-      s.bstr[i] = other_alias.impl()->strides[i];
+      s.output_size[i] = out_sz[i];
+      s.a_stride[i] = me_alias.impl()->strides[i];
+      s.b_stride[i] = other_alias.impl()->strides[i];
     }
 
     launch_sub_strided(out.data(), me_alias.data(), other_alias.data(), s,
                        out.numel());
   }
 
-  out.name_ = fmt::format("{} - {}", name_, other.name_);
   SetupAutograd<SubFunction>(*this, other, out);
   return out;
 }
@@ -376,7 +373,6 @@ Tensor Tensor::transpose(int d0, int d1) const {
 
   Tensor return_tensor;
   return_tensor.impl_ = view;
-  return_tensor.name_ = fmt::format("{} transpose({},{})", name_, d0, d1);
 
   return return_tensor;
 }
@@ -419,7 +415,7 @@ Tensor Tensor::expand(const std::array<int64_t, 3> &new_sz) const {
     v->grad = impl()->grad;
   }
 
-  return Tensor(v, fmt::format("{} expand", name_));
+  return Tensor(v);
 }
 
 Tensor Tensor::cuda() const {
@@ -437,7 +433,6 @@ Tensor Tensor::cuda() const {
                           numel() * element_size(dtype()),
                           cudaMemcpyHostToDevice));
 
-    new_tensor.name_ = fmt::format("{} CUDA", name_);
     return new_tensor;
   }
 }
@@ -457,7 +452,6 @@ Tensor Tensor::cpu() const {
                           numel() * element_size(dtype()),
                           cudaMemcpyDeviceToHost));
 
-    new_tensor.name_ = fmt::format("{} host", name_);
     return new_tensor;
   }
 }
@@ -474,7 +468,6 @@ Tensor Tensor::copy() const {
     memcpy(new_tensor.data(), data(), numel() * element_size(dtype()));
   }
 
-  new_tensor.name_ = fmt::format("{} copy", name_);
   return new_tensor;
 }
 
@@ -518,7 +511,6 @@ Tensor matmul(Tensor const &l, Tensor const &r) {
 
   SetupAutograd<MatmulFunction>(l, r, new_tensor);
 
-  new_tensor.name_ = fmt::format("{} @ {}", l.name_, r.name_);
   return new_tensor;
 }
 
@@ -530,7 +522,6 @@ Tensor relu(Tensor &t) {
 
   SetupAutograd<ReLUFunction>(new_tensor, t);
 
-  new_tensor.name_ = fmt::format("{} ReLU", t.name_);
   return new_tensor;
 }
 
@@ -541,7 +532,6 @@ Tensor gelu(Tensor &t) {
   launch_gelu(new_tensor.data(), t.data(), t.numel());
 
   SetupAutograd<GeLUFunction>(new_tensor, t);
-  new_tensor.name_ = fmt::format("{} GeLU", t.name_);
   return new_tensor;
 }
 
@@ -551,7 +541,6 @@ Tensor tanh(Tensor &t) {
 
   launch_tanh(new_tensor.data(), t.data(), t.numel());
   SetupAutograd<TanhFunction>(new_tensor, t);
-  new_tensor.name_ = fmt::format("{} tanh", t.name_);
   return new_tensor;
 }
 
@@ -561,7 +550,6 @@ Tensor sigmoid(Tensor &t) {
 
   launch_sigmoid(new_tensor.data(), t.data(), t.numel());
   SetupAutograd<SigmoidFunction>(new_tensor, t);
-  new_tensor.name_ = fmt::format("{} sigmoid", t.name_);
   return new_tensor;
 }
 
@@ -605,7 +593,6 @@ Tensor sum(Tensor const &t, int64_t dim, bool keep_dim) {
     launch_sum_dim2(dst, srcp, dims[0], dims[1], dims[2]);
   }
 
-  new_tensor.name_ = fmt::format("{} sum({})", t.name_, dim);
   return new_tensor;
 }
 
@@ -619,7 +606,6 @@ Tensor mse(Tensor const &pred, Tensor const &target) {
   launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
 
   SetupAutograd<MseFunction>(pred, target, new_tensor);
-  new_tensor.name_ = fmt::format("{} mse", pred.name_, target.name_);
   return new_tensor;
 }
 

@@ -12,14 +12,14 @@ __device__ __forceinline__ void compute_dimensions(int (&dims)[3], size_t idx,
                                                    const StrideInfo &s) {
 
   if (s.rank == 3) {
-    int64_t rest = s.size[1] * s.size[2];
+    int64_t rest = s.output_size[1] * s.output_size[2];
     dims[0] = idx / rest;
     int64_t rem = idx % rest;
-    dims[1] = rem / s.size[2];
-    dims[2] = rem % s.size[2];
+    dims[1] = rem / s.output_size[2];
+    dims[2] = rem % s.output_size[2];
   } else if (s.rank == 2) {
-    dims[0] = idx / s.size[1];
-    dims[1] = idx % s.size[1];
+    dims[0] = idx / s.output_size[1];
+    dims[1] = idx % s.output_size[1];
     dims[2] = 0;
   } else { // rank == 1
     dims[0] = idx;
@@ -103,9 +103,9 @@ __global__ void add_strided_kernel(float *__restrict__ out,
   compute_dimensions(dims, idx, s);
 
   int64_t offA =
-      dims[0] * s.astr[0] + dims[1] * s.astr[1] + dims[2] * s.astr[2];
+      dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] + dims[2] * s.a_stride[2];
   int64_t offB =
-      dims[0] * s.bstr[0] + dims[1] * s.bstr[1] + dims[2] * s.bstr[2];
+      dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] + dims[2] * s.b_stride[2];
 
   out[idx] = a[offA] + b[offB];
 }
@@ -155,9 +155,9 @@ __global__ void mul_strided_kernel(float *__restrict__ out,
   compute_dimensions(dims, idx, s);
 
   int64_t offA =
-      dims[0] * s.astr[0] + dims[1] * s.astr[1] + dims[2] * s.astr[2];
+      dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] + dims[2] * s.a_stride[2];
   int64_t offB =
-      dims[0] * s.bstr[0] + dims[1] * s.bstr[1] + dims[2] * s.bstr[2];
+      dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] + dims[2] * s.b_stride[2];
 
   out[idx] = a[offA] * b[offB];
 }
@@ -199,9 +199,9 @@ __global__ void sub_strided_kernel(float *out, float *a, float *b, StrideInfo s,
   compute_dimensions(dims, idx, s);
 
   int64_t offA =
-      dims[0] * s.astr[0] + dims[1] * s.astr[1] + dims[2] * s.astr[2];
+      dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] + dims[2] * s.a_stride[2];
   int64_t offB =
-      dims[0] * s.bstr[0] + dims[1] * s.bstr[1] + dims[2] * s.bstr[2];
+      dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] + dims[2] * s.b_stride[2];
 
   out[idx] = a[offA] - b[offB];
 }

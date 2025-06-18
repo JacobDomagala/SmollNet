@@ -47,9 +47,8 @@ class Tensor {
   std::shared_ptr<TensorImpl> impl_ = nullptr;
 
 public:
-  std::string name_ = "empty";
-  explicit Tensor(const std::string& name = "empty");
-  explicit Tensor(std::shared_ptr<TensorImpl> impl, const std::string& name = "empty");
+  explicit Tensor();
+  explicit Tensor(std::shared_ptr<TensorImpl> impl);
 
   Tensor &operator=(const Tensor &o) noexcept = default;
   Tensor &operator=(Tensor &&o) noexcept = default;

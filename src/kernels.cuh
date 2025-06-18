@@ -6,10 +6,12 @@
 namespace smollnet {
 
 struct StrideInfo {
-  int64_t size[3]; // logical extents
-  int64_t astr[3]; // strides in floats for A
-  int64_t bstr[3]; // strides in floats for B
-  int rank;        // 1‒3
+  // size of the output operation
+  int64_t output_size[3];
+
+  int64_t a_stride[3];
+  int64_t b_stride[3];
+  int rank;
 };
 
 void launch_fill(float *ptr, size_t numElems, float val);
