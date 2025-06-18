@@ -45,7 +45,8 @@ public:
   void train(const Tensor &input, const Tensor &targets,
              const float lr = 0.0001f, const int32_t num_epochs = 32) const;
 
-  void print() const noexcept;
+  void print() const;
+  void print_grads() const;
 
 private:
   std::vector<std::unique_ptr<Module>> layers_;

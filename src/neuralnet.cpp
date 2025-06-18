@@ -34,6 +34,7 @@ Tensor Dense::forward(const Tensor &input) const {
   Tensor output = input;
   for (const auto &layer : layers_) {
     output = layer->forward(output);
+    output.print_elms();
   }
   return output;
 }
@@ -67,10 +68,21 @@ void Dense::train(const Tensor &input, const Tensor &targets, const float lr,
   }
 }
 
-void Dense::print() const noexcept {
+void Dense::print() const {
   fmt::print("Dense neural network [num_layers: {}]\n", layers_.size());
   for (const auto &layer : layers_) {
     layer->print();
+  }
+}
+
+void Dense::print_grads() const {
+  auto params = parameters();
+  for(const auto& p : params) {
+      if(p.requires_grad()) {
+        p.print();
+        p.print_elms();
+        p.grad().print_elms();
+      }
   }
 }
 
