@@ -312,7 +312,7 @@ std::vector<Tensor> MseFunction::backward(const std::vector<Tensor> &grad_output
   }
   if (needs_input_grad[1]) {
     gi[1] = create_grad_tensor(inputs[1]);
-    launch_mse_grad(gi[1].data(), inputs[1].data(), inputs[0].data(), -c, N);
+    launch_mse_grad(gi[1].data(), inputs[0].data(), inputs[1].data(), -c, N);
   }
   return gi;
 }
