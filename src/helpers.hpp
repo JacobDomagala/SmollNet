@@ -1,7 +1,6 @@
 #pragma once
 
 #include <fmt/core.h>
-#include <cassert>
 #include <cstdlib>
 
 namespace smollnet {
@@ -10,7 +9,7 @@ namespace smollnet {
     if (!(expr)) {                                                             \
       fmt::print("Assertion fail at {}:{}: {}\n", __FILE__, __LINE__,          \
                  message);                                                     \
-      assert(false);                                                           \
+      exit(-1);                                                           \
     }                                                                          \
   }
 
