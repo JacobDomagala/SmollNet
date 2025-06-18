@@ -1,19 +1,15 @@
 #include "neuralnet.hpp"
-#include "kernels.cuh"
 #include "sgd.hpp"
 
 #include <fmt/core.h>
 
 namespace smollnet {
 
-Linear::Linear(int64_t in_dim, int64_t out_dim) {
-  weights = rand({in_dim, out_dim}, DataType::f32, Device::CUDA, true);
-  bias = zeros({1, out_dim}, DataType::f32, Device::CUDA, true);
-}
+Linear::Linear(int64_t in_dim, int64_t out_dim)
+    : weights(rand({in_dim, out_dim}, DataType::f32, Device::CUDA, true)),
+      bias(zeros({1, out_dim}, DataType::f32, Device::CUDA, true)) {}
 
-Tensor Linear::forward(Tensor &t) {
-  return matmul(t, weights).add(bias);
-}
+Tensor Linear::forward(Tensor &t) { return matmul(t, weights).add(bias); }
 
 void Linear::print() const {
   printf("Linear layer [\n\tWeights: ");
@@ -24,33 +20,21 @@ void Linear::print() const {
   printf("]\n");
 }
 
-void Linear::gradient_update() const {
-  if (weights.grad().initialized())
-    launch_sgd_update(weights.data(), weights.grad().data(), 0.001f,
-                      weights.numel());
-  if (bias.grad().initialized())
-    launch_sgd_update(bias.data(), bias.grad().data(), 0.001f, bias.numel());
-
-  weights.zero_grad();
-  bias.zero_grad();
-}
-
 std::vector<Tensor> Linear::parameters() const { return {weights, bias}; }
 
 Tensor ReLU::forward(Tensor &t) { return relu(t); }
-void ReLU::gradient_update() const {}
 std::vector<Tensor> ReLU::parameters() const { return {}; }
 void ReLU::print() const { printf("ReLU\n"); }
 
 Tensor GeLU::forward(Tensor &t) { return gelu(t); }
-void GeLU::gradient_update() const {}
 std::vector<Tensor> GeLU::parameters() const { return {}; }
 void GeLU::print() const { printf("GeLU\n"); }
 
 Tensor Dense::forward(const Tensor &input) const {
   Tensor output = input;
-  for (auto &layer : layers_) {
+  for (const auto &layer : layers_) {
     output = layer->forward(output);
+    output.print_elms();
   }
   return output;
 }
@@ -58,7 +42,7 @@ Tensor Dense::forward(const Tensor &input) const {
 std::vector<Tensor> Dense::parameters() const {
   std::vector<Tensor> params;
 
-  for (auto &layer : layers_) {
+  for (const auto &layer : layers_) {
     auto layer_params = layer->parameters();
     params.insert(params.end(), layer_params.begin(), layer_params.end());
   }
@@ -66,8 +50,8 @@ std::vector<Tensor> Dense::parameters() const {
   return params;
 }
 
-void Dense::train(Tensor &input, Tensor &targets, Optimizer optimizer, float lr,
-                  int32_t num_epochs) const {
+void Dense::train(const Tensor &input, const Tensor &targets, const float lr,
+                  const int32_t num_epochs) const {
   auto features = input.copy();
 
   auto optim = SGD(std::move(parameters()), lr);
@@ -84,10 +68,21 @@ void Dense::train(Tensor &input, Tensor &targets, Optimizer optimizer, float lr,
   }
 }
 
-void Dense::print() const noexcept {
-  printf("Dense neural network [num_layers: %ld]\n", layers_.size());
-  for (auto &layer : layers_) {
+void Dense::print() const {
+  fmt::print("Dense neural network [num_layers: {}]\n", layers_.size());
+  for (const auto &layer : layers_) {
     layer->print();
+  }
+}
+
+void Dense::print_grads() const {
+  auto params = parameters();
+  for(const auto& p : params) {
+      if(p.requires_grad()) {
+        p.print();
+        p.print_elms();
+        p.grad().print_elms();
+      }
   }
 }
 

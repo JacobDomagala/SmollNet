@@ -15,7 +15,7 @@
 namespace smollnet {
 
 template <typename GradF>
-void SetupAutograd(Tensor const &l, Tensor const &r, Tensor const &n) {
+void SetupAutograd(const Tensor&l, const Tensor&r, const Tensor&n) {
   if (n.requires_grad()) {
     auto *meta = n.autograd();
 
@@ -25,7 +25,7 @@ void SetupAutograd(Tensor const &l, Tensor const &r, Tensor const &n) {
 }
 
 template <typename GradF>
-void SetupAutograd(Tensor const &n, Tensor const &other) {
+void SetupAutograd(const Tensor&n, const Tensor&other) {
   if (n.requires_grad()) {
     auto *meta = n.autograd();
 
@@ -96,9 +96,10 @@ void Tensor::zero_grad() const {
 bool Tensor::requires_grad() const noexcept { return impl()->requires_grad; }
 
 Tensor Tensor::grad() const noexcept {
-  ASSERT(impl()->grad, "Accessing uninitialized gradient!");
+  auto grad_ptr = impl()->grad;
+  ASSERT(grad_ptr, "Accessing uninitialized gradient!");
 
-  return impl()->grad->grad;
+  return grad_ptr->grad;
 }
 
 AutogradMeta *Tensor::autograd() const noexcept { return impl()->grad.get(); }
@@ -117,9 +118,11 @@ void *Tensor::data() const noexcept {
 
 size_t Tensor::numel() const noexcept { return impl_->elems; }
 
-const std::array<int64_t, 3>& Tensor::dims() const noexcept { return impl_->sizes; }
+const std::array<int64_t, 3> &Tensor::dims() const noexcept {
+  return impl_->sizes;
+}
 
-const std::array<int64_t, 3>& Tensor::strides() const noexcept {
+const std::array<int64_t, 3> &Tensor::strides() const noexcept {
   return impl_->strides;
 }
 
@@ -137,14 +140,14 @@ void Tensor::print() const {
 
 void Tensor::print_elms() const {
   ASSERT(ndims() <= 3,
-           fmt::format("Tensor::print_elms unsupported ndims=={}", ndims()));
+         fmt::format("Tensor::print_elms unsupported ndims=={}", ndims()));
 
   // Could be expensive
   auto t = cpu();
   const float *raw_data = static_cast<const float *>(t.data());
 
-  const auto& sizes = dims();
-  const auto& stride = strides();
+  const auto &sizes = dims();
+  const auto &stride = strides();
 
   if (ndims() == 1) {
     fmt::print("Tensor: ([");
@@ -191,7 +194,60 @@ Tensor Tensor::sum(int64_t dim, bool keep_dim) const {
   return ::smollnet::sum(*this, dim, keep_dim);
 }
 
-Tensor Tensor::matmul(Tensor const &other) const {
+Tensor Tensor::mul(const Tensor&other) const {
+  std::array<int64_t, 3> out_sz = {0, 0, 0};
+  bool expand_me = false;
+  bool expand_other = false;
+
+  int64_t out_rank = 0;
+  for (int i = 0; i < 3; ++i) {
+    const auto my_size = size(i);
+    const auto other_size = other.size(i);
+    ASSERT(
+        my_size == other_size or (my_size == 1 or my_size == 0) or
+            (other_size == 1 or other_size == 0),
+        fmt::format("Unable to multiply non-broadcastable Tensors! [{},{},{}] "
+                    "and [{},{},{}]",
+                    size(0), size(1), size(2), other.size(0), other.size(1),
+                    other.size(2)));
+
+    out_sz[i] = std::max(impl()->sizes[i], other.impl()->sizes[i]);
+
+    if (out_sz[i] > 0) {
+      out_rank++;
+    }
+
+    expand_me |= out_sz[i] != my_size;
+    expand_other |= out_sz[i] != other_size;
+  }
+
+  auto me_alias = expand_me ? expand(out_sz) : *this;
+  auto other_alias = expand_other ? other.expand(out_sz) : other;
+
+  Tensor out = empty(out_sz.data(), out_rank, dtype(), device(),
+                     requires_grad() || other.requires_grad());
+
+  if (!expand_me and !expand_other) {
+    launch_mul(static_cast<float *>(out.data()), static_cast<float *>(data()),
+               static_cast<float *>(other.data()), out.numel());
+  } else {
+    StrideInfo s{};
+    s.rank = out_rank;
+    for (int i = 0; i < s.rank; ++i) {
+      s.output_size[i] = out_sz[i];
+      s.a_stride[i] = me_alias.impl()->strides[i];
+      s.b_stride[i] = other_alias.impl()->strides[i];
+    }
+
+    launch_mul_strided(out.data(), me_alias.data(), other_alias.data(), s,
+                       out.numel());
+  }
+
+  SetupAutograd<MulFunction>(*this, other, out);
+  return out;
+}
+
+Tensor Tensor::matmul(const Tensor&other) const {
   return ::smollnet::matmul(*this, other);
 }
 
@@ -235,9 +291,9 @@ Tensor Tensor::add(const Tensor &other) const {
     StrideInfo s{};
     s.rank = out_rank;
     for (int i = 0; i < s.rank; ++i) {
-      s.size[i] = out_sz[i];
-      s.astr[i] = me_alias.impl()->strides[i];
-      s.bstr[i] = other_alias.impl()->strides[i];
+      s.output_size[i] = out_sz[i];
+      s.a_stride[i] = me_alias.impl()->strides[i];
+      s.b_stride[i] = other_alias.impl()->strides[i];
     }
 
     launch_add_strided(out.data(), me_alias.data(), other_alias.data(), s,
@@ -248,7 +304,7 @@ Tensor Tensor::add(const Tensor &other) const {
   return out;
 }
 
-Tensor Tensor::sub(Tensor const &other) const {
+Tensor Tensor::sub(const Tensor&other) const {
   std::array<int64_t, 3> out_sz = {0, 0, 0};
   bool expand_me = false;
   bool expand_other = false;
@@ -287,9 +343,9 @@ Tensor Tensor::sub(Tensor const &other) const {
     StrideInfo s{};
     s.rank = out_rank;
     for (int i = 0; i < s.rank; ++i) {
-      s.size[i] = out_sz[i];
-      s.astr[i] = me_alias.impl()->strides[i];
-      s.bstr[i] = other_alias.impl()->strides[i];
+      s.output_size[i] = out_sz[i];
+      s.a_stride[i] = me_alias.impl()->strides[i];
+      s.b_stride[i] = other_alias.impl()->strides[i];
     }
 
     launch_sub_strided(out.data(), me_alias.data(), other_alias.data(), s,
@@ -418,12 +474,29 @@ Tensor Tensor::copy() const {
   FREE FUNCTIONS
 */
 
-Tensor matmul(Tensor const &l, Tensor const &r) {
+Tensor matmul(const Tensor&l, const Tensor&r) {
   // Check dims
+  ASSERT(l.ndims() >= 2 and r.ndims() >= 2,
+         fmt::format("Cannot matrix multiply Tensors with fewer dims than 2! "
+                     "lhs.ndims()={} rhs.ndims()={}",
+                     l.ndims(), r.ndims()));
+
+  // TODO: allow for broadcast
   ASSERT(l.dims().size() == r.dims().size(),
          fmt::format("{} vs {}", l.dims().size(), r.dims().size()));
-  ASSERT(l.dims()[1] == r.dims()[0],
-         fmt::format("{} not equal to {}", l.dims()[1], r.dims()[0]));
+
+  if (l.ndims() == 2) {
+    ASSERT(l.dims()[1] == r.dims()[0],
+           fmt::format("Incorrect matrix size! lhs number of rows ({}) not "
+                       "equal to rhs number of cols ({})",
+                       l.dims()[1], r.dims()[0]));
+  } else {
+    ASSERT(l.dims()[2] == r.dims()[1],
+           fmt::format("Incorrect matrix size! lhs number of rows ({}) not "
+                       "equal to rhs number of cols ({})",
+                       l.dims()[2], r.dims()[1]));
+  }
+
   ASSERT(l.device() == r.device(),
          fmt::format("Device mismatch! {} and {}", get_device_name(l.device()),
                      get_device_name(r.device())));
@@ -432,15 +505,42 @@ Tensor matmul(Tensor const &l, Tensor const &r) {
   Tensor new_tensor =
       empty({l.dims()[0], r.dims()[1]}, l.dtype(), l.device(), needs_grad);
 
-  launch_matmul(new_tensor.data(), l.data(), r.data(), l.dims().data(),
-                r.dims().data(), new_tensor.numel());
+  StrideInfo stride_info;
+  stride_info.output_size[0] = new_tensor.size(0);
+  stride_info.output_size[1] = new_tensor.size(1);
+
+  const auto &l_strides = l.strides();
+  ;
+  stride_info.a_stride[0] = l_strides[0];
+  stride_info.a_stride[1] = l_strides[1];
+  stride_info.a_stride[2] = l_strides[2];
+
+  const auto &r_strides = r.strides();
+  ;
+  stride_info.b_stride[0] = r_strides[0];
+  stride_info.b_stride[1] = r_strides[1];
+  stride_info.b_stride[2] = r_strides[2];
+
+  stride_info.rank = new_tensor.ndims();
+
+  SizeInfo size_info;
+  size_info.a_size[0] = l.size(0);
+  size_info.a_size[1] = l.size(1);
+  size_info.a_size[2] = l.size(2);
+
+  size_info.b_size[0] = r.size(0);
+  size_info.b_size[1] = r.size(1);
+  size_info.b_size[2] = r.size(2);
+
+  launch_matmul(new_tensor.data(), l.data(), r.data(), stride_info, size_info,
+                new_tensor.numel());
 
   SetupAutograd<MatmulFunction>(l, r, new_tensor);
 
   return new_tensor;
 }
 
-Tensor relu(Tensor &t) {
+Tensor relu(const Tensor &t) {
   Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
                             t.requires_grad());
 
@@ -451,38 +551,35 @@ Tensor relu(Tensor &t) {
   return new_tensor;
 }
 
-Tensor gelu(Tensor &t) {
+Tensor gelu(const Tensor &t) {
   Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
                             t.requires_grad());
 
   launch_gelu(new_tensor.data(), t.data(), t.numel());
 
   SetupAutograd<GeLUFunction>(new_tensor, t);
-
   return new_tensor;
 }
 
-Tensor tanh(Tensor &t) {
+Tensor tanh(const Tensor &t) {
   Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
                             t.requires_grad());
 
   launch_tanh(new_tensor.data(), t.data(), t.numel());
   SetupAutograd<TanhFunction>(new_tensor, t);
-
   return new_tensor;
 }
 
-Tensor sigmoid(Tensor &t) {
+Tensor sigmoid(const Tensor &t) {
   Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
                             t.requires_grad());
 
   launch_sigmoid(new_tensor.data(), t.data(), t.numel());
   SetupAutograd<SigmoidFunction>(new_tensor, t);
-
   return new_tensor;
 }
 
-Tensor sum(Tensor const &t, int64_t dim, bool keep_dim) {
+Tensor sum(const Tensor&t, int64_t dim, bool keep_dim) {
   auto dims = t.dims();
   auto new_rank = keep_dim ? t.ndims() : t.ndims() - 1;
   auto data_type = t.dtype();
@@ -525,16 +622,16 @@ Tensor sum(Tensor const &t, int64_t dim, bool keep_dim) {
   return new_tensor;
 }
 
-Tensor mse(Tensor const &pred, Tensor const &target) {
+Tensor mul(const Tensor&left, const Tensor&right) { return left.mul(right); }
+
+Tensor mse(const Tensor&pred, const Tensor&target) {
   ASSERT(pred.dims() == target.dims(), "");
 
   bool requires_grad = any_requires_grad({pred, target});
-  auto new_tensor = zeros({pred.size(0), pred.size(1)}, pred.dtype(),
-                          pred.device(), requires_grad);
+  auto new_tensor = zeros({1}, pred.dtype(), pred.device(), requires_grad);
   launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
 
   SetupAutograd<MseFunction>(pred, target, new_tensor);
-
   return new_tensor;
 }
 
@@ -542,14 +639,14 @@ Tensor operator+(const Tensor &l, const Tensor &r) { return l.add(r); }
 
 Tensor operator-(const Tensor &l, const Tensor &r) { return l.sub(r); }
 
-Tensor operator*(const Tensor &l, const Tensor &r) { return l.matmul(r); }
+Tensor operator*(const Tensor &l, const Tensor &r) { return l.mul(r); }
 
-Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
+Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d,
              bool requires_grad) {
   auto storage = std::make_shared<Storage>();
 
   float *ptr;
-  size_t bytes = element_size(data) * product(dims, rank);
+  size_t bytes = element_size(t) * product(dims, rank);
   if (d == Device::CUDA) {
     CHECK_CUDA(cudaMalloc(&ptr, bytes));
   } else {
@@ -559,7 +656,7 @@ Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
   storage->ptr = ptr;
   storage->device = d;
 
-  auto impl = std::make_shared<TensorImpl>(dims, rank, data);
+  auto impl = std::make_shared<TensorImpl>(dims, rank, t);
   impl->storage = storage;
   impl->requires_grad = requires_grad;
   if (requires_grad) {
@@ -569,30 +666,30 @@ Tensor empty(const int64_t *dims, size_t rank, DataType data, Device d,
   return Tensor(impl);
 }
 
-Tensor zeros(const int64_t *dims, size_t rank, DataType data, Device d,
+Tensor zeros(const int64_t *dims, size_t rank, DataType t, Device d,
              bool requires_grad) {
-  auto tensor = empty(dims, rank, data, d, requires_grad);
+  auto tensor = empty(dims, rank, t, d, requires_grad);
   if (d == Device::CUDA) {
     CHECK_CUDA(
-        cudaMemset(tensor.data(), 0, element_size(data) * product(dims, rank)));
+        cudaMemset(tensor.data(), 0, element_size(t) * product(dims, rank)));
   } else {
-    memset(tensor.data(), 0, element_size(data) * product(dims, rank));
+    memset(tensor.data(), 0, element_size(t) * product(dims, rank));
   }
   return tensor;
 }
 
-Tensor ones(const int64_t *dims, size_t rank, DataType data, Device d,
+Tensor ones(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad) {
-  auto tensor = empty(dims, rank, data, d, requires_grad);
+  auto tensor = empty(dims, rank, t, d, requires_grad);
 
   launch_fill(static_cast<float *>(tensor.data()), tensor.numel(), 1.0f);
 
   return Tensor{tensor};
 }
 
-Tensor rand(const int64_t *dims, size_t rank, DataType data, Device d,
+Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad) {
-  auto tensor = empty(dims, rank, data, d, requires_grad);
+  auto tensor = empty(dims, rank, t, d, requires_grad);
 
   launch_random_init(tensor.data(), tensor.numel());
 

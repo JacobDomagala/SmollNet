@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <fmt/base.h>
 #include <memory>
 
 namespace smollnet {
@@ -46,8 +47,8 @@ class Tensor {
   std::shared_ptr<TensorImpl> impl_ = nullptr;
 
 public:
-  Tensor();
-  Tensor(std::shared_ptr<TensorImpl> impl);
+  explicit Tensor();
+  explicit Tensor(std::shared_ptr<TensorImpl> impl);
 
   Tensor &operator=(const Tensor &o) noexcept = default;
   Tensor &operator=(Tensor &&o) noexcept = default;
@@ -77,13 +78,14 @@ public:
   void print_elms() const;
   size_t total_bytes() const noexcept;
 
-  Tensor add(Tensor const &other) const;
-  Tensor sub(Tensor const &other) const;
+  Tensor add(const Tensor&other) const;
+  Tensor sub(const Tensor&other) const;
   Tensor sum(int64_t dim, bool keep_dim = false) const;
-  Tensor matmul(Tensor const &other) const;
+  Tensor mul(const Tensor&other) const;
+  Tensor matmul(const Tensor&other) const;
 
   Tensor transpose(int d0, int d1) const;
-  Tensor expand(const std::array<int64_t, 3> &new_dims) const;
+  Tensor expand(const std::array<int64_t, 3> &new_sz) const;
 
   Tensor cuda() const;
   Tensor cpu() const;
@@ -95,19 +97,20 @@ public:
 */
 
 // Activation functions
-Tensor relu(Tensor &t);
-Tensor gelu(Tensor &t);
-Tensor tanh(Tensor &t);
-Tensor sigmoid(Tensor &t);
+Tensor relu(const Tensor &t);
+Tensor gelu(const Tensor &t);
+Tensor tanh(const Tensor &t);
+Tensor sigmoid(const Tensor &t);
 
 // Operation functions
-Tensor matmul(Tensor const &l, Tensor const &r);
-Tensor sum(Tensor const &t, int64_t dim, bool keep_dim = false);
-Tensor operator+(Tensor const &l, Tensor const &r);
-Tensor operator-(Tensor const &l, Tensor const &r);
-Tensor operator*(Tensor const &l, Tensor const &r);
+Tensor matmul(const Tensor&l, const Tensor&r);
+Tensor mul(const Tensor& left, const Tensor& right);
+Tensor sum(const Tensor&t, int64_t dim, bool keep_dim = false);
+Tensor operator+(const Tensor&l, const Tensor&r);
+Tensor operator-(const Tensor&l, const Tensor&r);
+Tensor operator*(const Tensor&l, const Tensor&r);
 
-Tensor mse(Tensor const &pred, Tensor const &target);
+Tensor mse(const Tensor&pred, const Tensor&target);
 
 // Create functions
 Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d,

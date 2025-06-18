@@ -1,19 +1,12 @@
 #pragma once
 
+#include "module.hpp"
 #include "tensor.hpp"
 
 #include <memory>
 #include <vector>
 
 namespace smollnet {
-
-struct Module {
-  virtual ~Module() = default;
-  virtual Tensor forward(Tensor &t) = 0;
-  virtual void gradient_update() const = 0;
-  virtual void print() const = 0;
-  virtual std::vector<Tensor> parameters() const = 0;
-};
 
 struct Linear : Module {
   Linear(int64_t in_dim, int64_t out_dim);
@@ -22,22 +15,18 @@ struct Linear : Module {
   std::vector<Tensor> parameters() const override;
   void print() const override;
 
-  void gradient_update() const override;
-
   Tensor weights;
   Tensor bias;
 };
 
 struct ReLU : Module {
   Tensor forward(Tensor &t) override;
-  void gradient_update() const override;
   void print() const override;
   std::vector<Tensor> parameters() const override;
 };
 
 struct GeLU : Module {
   Tensor forward(Tensor &t) override;
-  void gradient_update() const override;
   void print() const override;
   std::vector<Tensor> parameters() const override;
 };
@@ -53,11 +42,11 @@ public:
   Tensor forward(const Tensor &input) const;
   std::vector<Tensor> parameters() const;
 
-  void train(Tensor &input, Tensor &targets,
-             Optimizer optimizer = Optimizer::SGD, float lr = 0.0001f,
-             int32_t num_epochs = 32) const;
+  void train(const Tensor &input, const Tensor &targets,
+             const float lr = 0.0001f, const int32_t num_epochs = 32) const;
 
-  void print() const noexcept;
+  void print() const;
+  void print_grads() const;
 
 private:
   std::vector<std::unique_ptr<Module>> layers_;

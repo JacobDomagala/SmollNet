@@ -12,8 +12,8 @@ class SGD {
 public:
   SGD(std::vector<Tensor> &&params, float lr)
       : params_(std::move(params)), lr_(lr) {}
-  void step();
-  void zero_grad();
+  void step() const;
+  void zero_grad() const;
 };
 
 } // namespace smollnet

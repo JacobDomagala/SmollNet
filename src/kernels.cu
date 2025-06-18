@@ -12,14 +12,14 @@ __device__ __forceinline__ void compute_dimensions(int (&dims)[3], size_t idx,
                                                    const StrideInfo &s) {
 
   if (s.rank == 3) {
-    int64_t rest = s.size[1] * s.size[2];
+    int64_t rest = s.output_size[1] * s.output_size[2];
     dims[0] = idx / rest;
     int64_t rem = idx % rest;
-    dims[1] = rem / s.size[2];
-    dims[2] = rem % s.size[2];
+    dims[1] = rem / s.output_size[2];
+    dims[2] = rem % s.output_size[2];
   } else if (s.rank == 2) {
-    dims[0] = idx / s.size[1];
-    dims[1] = idx % s.size[1];
+    dims[0] = idx / s.output_size[1];
+    dims[1] = idx % s.output_size[1];
     dims[2] = 0;
   } else { // rank == 1
     dims[0] = idx;
@@ -102,10 +102,10 @@ __global__ void add_strided_kernel(float *__restrict__ out,
   int dims[3] = {0, 0, 0};
   compute_dimensions(dims, idx, s);
 
-  int64_t offA =
-      dims[0] * s.astr[0] + dims[1] * s.astr[1] + dims[2] * s.astr[2];
-  int64_t offB =
-      dims[0] * s.bstr[0] + dims[1] * s.bstr[1] + dims[2] * s.bstr[2];
+  int64_t offA = dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] +
+                 dims[2] * s.a_stride[2];
+  int64_t offB = dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] +
+                 dims[2] * s.b_stride[2];
 
   out[idx] = a[offA] + b[offB];
 }
@@ -116,6 +116,58 @@ void launch_add_strided(void *dst, void *a, void *b, const StrideInfo &s,
   dim3 grd((total + blk.x - 1) / blk.x);
 
   add_strided_kernel<<<grd, blk>>>(static_cast<float *>(dst),
+                                   static_cast<const float *>(a),
+                                   static_cast<const float *>(b), s, total);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+template <typename T>
+__global__ void mul_kernel(T *out, T *left, T scalar, size_t n) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < n)
+    out[idx] = left[idx] * scalar;
+}
+
+template <typename T>
+__global__ void mul_kernel(T *out, T *left, T *right, size_t n) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < n)
+    out[idx] = left[idx] * right[idx];
+}
+
+void launch_mul(float *out, float *left, float *right, size_t numElems) {
+  dim3 block(256);
+  dim3 grid((numElems + block.x - 1) / block.x);
+  mul_kernel<<<grid, block>>>(out, left, right, numElems);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void mul_strided_kernel(float *__restrict__ out,
+                                   const float *__restrict__ a,
+                                   const float *__restrict__ b, StrideInfo s,
+                                   size_t total) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= total)
+    return;
+
+  // Decode linear index -> (i,j,k)
+  int dims[3] = {0, 0, 0};
+  compute_dimensions(dims, idx, s);
+
+  int64_t offA = dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] +
+                 dims[2] * s.a_stride[2];
+  int64_t offB = dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] +
+                 dims[2] * s.b_stride[2];
+
+  out[idx] = a[offA] * b[offB];
+}
+
+void launch_mul_strided(void *dst, void *a, void *b, const StrideInfo &s,
+                        size_t total) {
+  dim3 blk(256);
+  dim3 grd((total + blk.x - 1) / blk.x);
+
+  mul_strided_kernel<<<grd, blk>>>(static_cast<float *>(dst),
                                    static_cast<const float *>(a),
                                    static_cast<const float *>(b), s, total);
   CHECK_CUDA(cudaGetLastError());
@@ -146,10 +198,10 @@ __global__ void sub_strided_kernel(float *out, float *a, float *b, StrideInfo s,
   int dims[3] = {0, 0, 0};
   compute_dimensions(dims, idx, s);
 
-  int64_t offA =
-      dims[0] * s.astr[0] + dims[1] * s.astr[1] + dims[2] * s.astr[2];
-  int64_t offB =
-      dims[0] * s.bstr[0] + dims[1] * s.bstr[1] + dims[2] * s.bstr[2];
+  int64_t offA = dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] +
+                 dims[2] * s.a_stride[2];
+  int64_t offB = dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] +
+                 dims[2] * s.b_stride[2];
 
   out[idx] = a[offA] - b[offB];
 }
@@ -253,35 +305,38 @@ void launch_sum_dim2(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void matmul_kernel(float *out, float *left, float *right, int64_t l0,
-                              int64_t l1, int64_t l2, int64_t r0, int64_t r1,
-                              int64_t r2, size_t total) {
+__global__ void matmul_kernel(float *out, float *left, float *right,
+                              StrideInfo strides, SizeInfo sizes,
+                              size_t total) {
 
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
   if (idx >= total)
     return;
 
-  int i = idx / r1;
-  int j = idx % r1;
+  int i = idx / strides.output_size[1];
+  int j = idx % strides.output_size[1];
 
   float acc = 0.0f;
-  for (int id = 0; id < l1; ++id) {
-    acc += left[l1 * i + id] * right[r1 * id + j];
+  int K = sizes.a_size[1];
+
+  for (int elem = 0; elem < K; ++elem) {
+    acc += left[i * strides.a_stride[0] + elem * strides.a_stride[1]] *
+           right[j * strides.b_stride[1] + elem * strides.b_stride[0]];
   }
 
   out[idx] = acc;
 }
 
-void launch_matmul(void *out, void *left, void *right, const int64_t ldims[3],
-                   const int64_t rdims[3], size_t total) {
+void launch_matmul(void *out, void *left, void *right,
+                   const StrideInfo &strides, const SizeInfo &sizes,
+                   size_t total) {
 
   int block = 256;
   int grid = (total + block - 1) / block;
 
-  matmul_kernel<<<grid, block>>>(
-      static_cast<float *>(out), static_cast<float *>(left),
-      static_cast<float *>(right), ldims[0], ldims[1], ldims[2], rdims[0],
-      rdims[1], rdims[2], total);
+  matmul_kernel<<<grid, block>>>(static_cast<float *>(out),
+                                 static_cast<float *>(left),
+                                 static_cast<float *>(right), strides, sizes, total);
 
   CHECK_CUDA(cudaGetLastError());
 }
@@ -445,43 +500,42 @@ void launch_sigmoid_grad(void *out, void *grad_out, void *in, size_t total) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void mse_square_kernel(float *out, float *pred, float *target,
-                                  size_t total) {
-  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+__global__ void mse_kernel(float *out, const float *__restrict__ pred,
+                           const float *__restrict__ target, std::size_t n) {
+  extern __shared__ float sdata[];
+  std::size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  std::size_t stride = blockDim.x * gridDim.x;
+  float local_sum = 0.0f;
 
-  if (idx >= total)
-    return;
-
-  out[idx] = powf((pred[idx] - target[idx]), 2.0f);
-}
-
-__global__ void mse_sum_kernel(float *out, float *in, size_t N) {
-  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
-
-  if (idx > 0)
-    return;
-
-  float acc = 0.0f;
-  for (int i = 0; i < N; ++i) {
-    acc += in[i];
+  for (; idx < n; idx += stride) {
+    float diff = pred[idx] - target[idx];
+    local_sum += diff * diff;
   }
 
-  out[idx] = acc / N;
+  sdata[threadIdx.x] = local_sum;
+  __syncthreads();
+
+  // reduction in shared memory
+  for (std::size_t offset = blockDim.x / 2; offset > 0; offset >>= 1) {
+    if (threadIdx.x < offset)
+      sdata[threadIdx.x] += sdata[threadIdx.x + offset];
+    __syncthreads();
+  }
+
+  if (threadIdx.x == 0)
+    atomicAdd(out, sdata[0]);
 }
 
 void launch_mse(void *out, void *pred, void *target, size_t total) {
   int block = 256;
   int grid = (total + block - 1) / block;
 
-  mse_square_kernel<<<grid, block>>>(static_cast<float *>(out),
-                                     static_cast<float *>(pred),
-                                     static_cast<float *>(target), total);
+  mse_kernel<<<grid, block, block * sizeof(float)>>>(
+      static_cast<float *>(out), static_cast<float *>(pred),
+      static_cast<float *>(target), total);
 
-  CHECK_CUDA(cudaGetLastError());
-
-  mse_sum_kernel<<<grid, block>>>(static_cast<float *>(out),
-                                  static_cast<float *>(out), total);
-
+  mul_kernel<<<1, 1>>>(static_cast<float *>(out), static_cast<float *>(out),
+                       1.0f / static_cast<float>(total), 1);
   CHECK_CUDA(cudaGetLastError());
 }
 __global__ void sgd_kernel(float *w, const float *grad, float lr,
@@ -515,6 +569,148 @@ void launch_mse_grad(void *grad, void *pred, void *target, float coeff,
                                    static_cast<float *>(pred),
                                    static_cast<float *>(target), coeff, total);
   CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void variance_step1_kernel(float *out, float *in, float *mean,
+                                      const size_t batch_size,
+                                      const size_t num_features) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (idx >= batch_size * num_features)
+    return;
+
+  int batch_num = idx / num_features;
+  out[idx] = powf(mean[batch_num] - in[idx], 2);
+}
+
+__global__ void variance_step2_kernel(float *out, float *in,
+                                      const size_t batch_size,
+                                      const size_t num_features) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (idx >= batch_size)
+    return;
+
+  float acc = 0.0f;
+
+  for (int i = 0; i < num_features; ++i) {
+    acc += in[idx * num_features + i];
+  }
+
+  acc /= num_features;
+
+  out[idx] = acc;
+}
+
+void launch_variance(void *variance, void *staging_buffer, void *in, void *mean,
+                     size_t batch_size, size_t num_features) {
+  dim3 block = 256;
+  dim3 grid = (block.x + batch_size * num_features - 1) / block.x;
+
+  variance_step1_kernel<<<grid, block>>>(
+      static_cast<float *>(staging_buffer), static_cast<float *>(in),
+      static_cast<float *>(mean), batch_size, num_features);
+
+  variance_step2_kernel<<<grid, block>>>(static_cast<float *>(variance),
+                                         static_cast<float *>(staging_buffer),
+                                         batch_size, num_features);
+}
+
+__global__ void mean_2d_kernel(float *out, float *in, size_t d0, size_t d1) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+
+  if (idx >= d0)
+    return;
+
+  float acc = 0.0f;
+  for (int i = 0; i < d1; ++i) {
+    acc += in[idx * d1 + i];
+  }
+
+  acc /= d1;
+
+  out[idx] = acc;
+}
+
+void launch_mean_2d(void *out, void *in, size_t d0, size_t d1) {
+  dim3 block = 256;
+  dim3 grid = (block.x + d0 * d1 - 1) / block.x;
+
+  mean_2d_kernel<<<grid, block>>>(static_cast<float *>(out),
+                                  static_cast<float *>(in), d0, d1);
+}
+
+__global__ void layer_norm_kernel(float *out, float *features, float *mean,
+                                  float *variance, float *gamma, float *beta,
+                                  size_t batch_size, size_t num_features) {
+  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
+  const auto total = batch_size * num_features;
+
+  if (idx >= total)
+    return;
+
+  int batch_num = idx / num_features;
+
+  constexpr float epsilon = 1e-5f;
+  float normalized =
+      (features[idx] - mean[batch_num]) / sqrtf(variance[batch_num] + epsilon);
+
+  out[idx] = gamma[batch_num] * normalized + beta[batch_num];
+}
+
+void launch_layer_norm(void *out, void *features, void *mean, void *variance,
+                       void *gamma, void *beta, size_t batch_size,
+                       size_t num_features) {
+  dim3 block = 256;
+  size_t total = batch_size * num_features;
+  dim3 grid = (block.x + total - 1) / block.x;
+
+  layer_norm_kernel<<<grid, block>>>(
+      static_cast<float *>(out), static_cast<float *>(features),
+      static_cast<float *>(mean), static_cast<float *>(variance),
+      static_cast<float *>(gamma), static_cast<float *>(beta), batch_size,
+      num_features);
+}
+
+__global__ void layer_norm_grad_kernel(float *out_grad,
+                                       const float *normalized_input,
+                                       const float *scaled_gradient,
+                                       const float *variance,
+                                       const float *summed_scale,
+                                       const float *summed_scaled_input,
+                                       size_t batch_size, size_t num_features) {
+  const size_t idx = threadIdx.x + blockDim.x * blockIdx.x;
+  const size_t total = batch_size * num_features;
+  if (idx >= total)
+    return;
+
+  const size_t row = idx / num_features;
+
+  constexpr float eps = 1e-5f;
+  const float inv_std = rsqrtf(variance[row] + eps); // per-sample variance
+  const float m1 = summed_scale[row] / num_features; // Σδ / D
+  const float m2 = summed_scaled_input[row] / num_features; // Σδ·ẋ / D
+
+  const float hat_x = normalized_input[idx];
+  const float delta = scaled_gradient[idx]; // δ = dy * γ
+
+  const float res = inv_std * (delta - m1 - hat_x * m2); // ∂L/∂x
+  out_grad[idx] = res;
+}
+
+void launch_layer_norm_grad(void *out, void *normalized_input,
+                            void *scaled_gradient, void *variance,
+                            void *summed_scale, void *summed_scaled_input,
+                            size_t batch_size, size_t num_features) {
+
+  dim3 block = 256;
+  size_t total = batch_size * num_features;
+  dim3 grid = (block.x + total - 1) / block.x;
+  layer_norm_grad_kernel<<<grid, block>>>(
+      static_cast<float *>(out), static_cast<float *>(normalized_input),
+      static_cast<float *>(scaled_gradient), static_cast<float *>(variance),
+      static_cast<float *>(summed_scale),
+      static_cast<float *>(summed_scaled_input), batch_size, num_features);
 }
 
 } // namespace smollnet
