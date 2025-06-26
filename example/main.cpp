@@ -16,19 +16,11 @@ int main() {
   for (int epoch = 0; epoch < 64; ++epoch) {
     auto res = net.forward(input);
     auto loss = mse(res, targets);
-
+    fmt::print("epoch[{}]: Loss={}\n", epoch, static_cast<float*>(loss.cpu().data())[0]);
     loss.backward();
 
     auto optim = SGD(net.parameters(), 0.005f);
     optim.step();
     optim.zero_grad();
   }
-
-  targets.print_elms();
-
-  auto predicted = net.forward(input);
-  predicted.print_elms();
-
-  auto loss = mse(predicted, targets);
-  loss.print_elms();
 }

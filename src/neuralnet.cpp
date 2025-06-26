@@ -34,7 +34,7 @@ Tensor Dense::forward(const Tensor &input) const {
   Tensor output = input;
   for (const auto &layer : layers_) {
     output = layer->forward(output);
-    output.print_elms();
+    // output.print_elms();
   }
   return output;
 }

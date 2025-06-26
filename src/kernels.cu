@@ -305,47 +305,86 @@ void launch_sum_dim2(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void matmul_kernel(float *out, float *left, float *right,
-                              StrideInfo strides, SizeInfo sizes,
-                              size_t total) {
+__global__ void matmul_kernel(float* __restrict__ C,
+                              const float* __restrict__ A,
+                              const float* __restrict__ B,
+                              const StrideInfo strides,
+                              const SizeInfo  sizes,
+                              const int tile_width)
+{
+    const int col = blockIdx.x * blockDim.x + threadIdx.x;   // N‑index
+    const int row = blockIdx.y * blockDim.y + threadIdx.y;   // M‑index
 
-  auto idx = threadIdx.x + blockDim.x * blockIdx.x;
-  if (idx >= total)
-    return;
+    const int M = strides.output_size[0];
+    const int N = strides.output_size[1];
+    const int K = sizes.a_size[1];                           // = sizes.b_size[0]
 
-  int i = idx / strides.output_size[1];
-  int j = idx % strides.output_size[1];
+    const bool in_bounds = (row < M) && (col < N);
 
-  float acc = 0.0f;
-  int K = sizes.a_size[1];
+    extern __shared__ float s_mem[];
+    float* As = s_mem;                                       // tile from A (M×K)
+    float* Bs = s_mem + tile_width * tile_width;             // tile from B (K×N)
 
-  for (int elem = 0; elem < K; ++elem) {
-    acc += left[i * strides.a_stride[0] + elem * strides.a_stride[1]] *
-           right[j * strides.b_stride[1] + elem * strides.b_stride[0]];
-  }
+    float acc = 0.0f;
+    const int num_tiles = (K + tile_width - 1) / tile_width;
 
-  out[idx] = acc;
+    for (int t = 0; t < num_tiles; ++t) {
+        const int a_col = t * tile_width + threadIdx.x;      // K‑index into A
+        const int b_row = t * tile_width + threadIdx.y;      // K‑index into B
+
+        // Load current tiles into shared memory, zero‑padding out‑of‑range elements.
+        As[threadIdx.y * tile_width + threadIdx.x] =
+            (row < M && a_col < K) ? A[row * K + a_col] : 0.0f;
+
+        Bs[threadIdx.y * tile_width + threadIdx.x] =
+            (b_row < K && col < N) ? B[b_row * N + col] : 0.0f;
+
+        __syncthreads();
+
+        // Multiply–accumulate over the valid fragment length.
+        const int elems = min(tile_width, K - t * tile_width);
+        #pragma unroll
+        for (int e = 0; e < elems; ++e)
+            acc += As[threadIdx.y * tile_width + e] *
+                   Bs[e * tile_width + threadIdx.x];
+
+        __syncthreads();
+    }
+
+    if (in_bounds)
+        C[row * N + col] = acc;
 }
 
 void launch_matmul(void *out, void *left, void *right,
                    const StrideInfo &strides, const SizeInfo &sizes,
                    size_t total) {
+    constexpr int TILE = 16;
+    dim3 block(TILE, TILE);
 
-  int block = 256;
-  int grid = (total + block - 1) / block;
+    const int M = strides.output_size[0];        // rows of C
+    const int N = strides.output_size[1];        // cols of C
 
-  matmul_kernel<<<grid, block>>>(static_cast<float *>(out),
-                                 static_cast<float *>(left),
-                                 static_cast<float *>(right), strides, sizes, total);
+    dim3 grid((N + TILE - 1) / TILE,            // x‑dim ← N
+              (M + TILE - 1) / TILE);           // y‑dim ← M
 
-  CHECK_CUDA(cudaGetLastError());
+    size_t smem_bytes = 2 * TILE * TILE * sizeof(float);
+
+    matmul_kernel<<<grid, block, smem_bytes>>>(
+        static_cast<float*>(out),
+        static_cast<const float*>(left),
+        static_cast<const float*>(right),
+        strides,
+        sizes,
+        TILE);
+
+    CHECK_CUDA(cudaGetLastError());
 }
 
 __global__ void relu_kernel(float *out, float *in, size_t total) {
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
 
   if (idx < total)
-    out[idx] = max(in[idx], 0.0f);
+    out[idx] = fmaxf(in[idx], 0.0f);
 }
 
 void launch_relu(void *out, void *in, size_t total) {
