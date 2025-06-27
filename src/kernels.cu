@@ -217,9 +217,7 @@ void launch_sub_strided(void *out, void *a, void *b, const StrideInfo &s,
 template <size_t BLOCK_DIM = 256>
 __global__ void warp_level_sum(const float *__restrict__ in,
                                float *__restrict__ out, size_t dim_size,
-                               size_t offset,
-                               size_t n)
-{
+                               size_t offset, size_t n) {
   // We always launch this kernel as 1D block
   // the only difference can be a grid dim
   const int64_t col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -252,30 +250,30 @@ __global__ void warp_level_sum(const float *__restrict__ in,
   }
 }
 
-void launch_sum_dim0(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
+void launch_sum_dim0(void *out, void *in, const StrideAndSize &s) {
 
   // Contigious memory access -> warp level reduce!
-  if (d1 * d2 == 1) {
+  if (s.stride[0] == 1) {
     constexpr size_t BLOCK = 256;
-    const auto total = d0 * d1 * d2;
+    const auto total = s.size[0] * s.size[1] * s.size[2];
     dim3 grid = (total + BLOCK - 1) / BLOCK;
     warp_level_sum<BLOCK><<<grid, BLOCK>>>(static_cast<const float *>(in),
-                                           static_cast<float *>(out), d0, 0,
-                                           total);
+                                           static_cast<float *>(out), s.size[0],
+                                           0, total);
   } else {
     // For strided pattern use tile + smem
   }
 }
 
-void launch_sum_dim1(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
+void launch_sum_dim1(void *out, void *in, const StrideAndSize &s) {
   // Contigious memory access -> warp level reduce!
-  if (d2 == 1) {
+  if (s.stride[1] == 1) {
     constexpr size_t BLOCK = 256;
-    const auto total = d0 * d1 * d2;
-    dim3 grid((d1 + BLOCK - 1) / BLOCK, d0, 1);
+    const auto total = s.size[0] * s.size[1] * s.size[2];
+    dim3 grid((s.size[1] + BLOCK - 1) / BLOCK, s.size[0], 1);
     warp_level_sum<BLOCK><<<grid, BLOCK>>>(static_cast<const float *>(in),
-                                           static_cast<float *>(out), d1, 0,
-                                           total);
+                                           static_cast<float *>(out), s.size[1],
+                                           0, total);
   } else {
     // For strided pattern use tile + smem
   }
@@ -283,16 +281,19 @@ void launch_sum_dim1(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-void launch_sum_dim2(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
-  // Since we only support Rank3 Tensors, this is always contigious memory
-  dim3 block(256, 1, 1);
-  const auto total = d0 * d1 * d2;
-  dim3 grid((block.x + d2 - 1) / block.x, d1, d0);
+void launch_sum_dim2(void *out, void *in, const StrideAndSize &s) {
 
-  warp_level_sum<<<grid, block>>>(static_cast<const float *>(in),
-                                  static_cast<float *>(out), d2, d1, total);
+  if (s.stride[2] == 1) {
+    constexpr size_t BLOCK = 256;
+    const auto total = s.size[0] * s.size[1] * s.size[2];
+    dim3 grid((BLOCK + s.size[2] - 1) / BLOCK, s.size[1], s.size[0]);
 
-  CHECK_CUDA(cudaGetLastError());
+    warp_level_sum<BLOCK><<<grid, BLOCK>>>(static_cast<const float *>(in),
+                                           static_cast<float *>(out), s.size[2],
+                                           s.size[1], total);
+
+    CHECK_CUDA(cudaGetLastError());
+  }
 }
 
 __global__ void matmul_kernel(float *__restrict__ C,

@@ -608,13 +608,18 @@ Tensor sum(const Tensor&t, int64_t dim, bool keep_dim) {
   dims[0] = std::max(dims[0], 1l);
   dims[1] = std::max(dims[1], 1l);
   dims[2] = std::max(dims[2], 1l);
+
+  StrideAndSize s;
+  s.size = dims;
+  s.stride = t.strides();
+
   if (dim == 0) {
-    launch_sum_dim0(dst, srcp, dims[0], dims[1], dims[2]);
+    launch_sum_dim0(dst, srcp, s);
   } else if (dim == 1) {
-    launch_sum_dim1(dst, srcp, dims[0], dims[1], dims[2]);
+    launch_sum_dim1(dst, srcp, s);
   } else {
     // dim==2
-    launch_sum_dim2(dst, srcp, dims[0], dims[1], dims[2]);
+    launch_sum_dim2(dst, srcp, s);
   }
 
   return new_tensor;

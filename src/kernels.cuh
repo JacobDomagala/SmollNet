@@ -1,9 +1,15 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
 namespace smollnet {
+
+struct StrideAndSize {
+  std::array<int64_t, 3> stride;
+  std::array<int64_t, 3> size;
+};
 
 struct StrideInfo {
   // size of the output operation
@@ -34,9 +40,9 @@ void launch_mul(float *out, float *a, float *b, size_t numElems);
 void launch_mul_strided(void *dst, void *a, void *b, const StrideInfo &s,
                         size_t total);
 
-void launch_sum_dim0(void *out, void *in, int64_t d0, int64_t d1, int64_t d2);
-void launch_sum_dim1(void *out, void *in, int64_t d0, int64_t d1, int64_t d2);
-void launch_sum_dim2(void *out, void *in, int64_t d0, int64_t d1, int64_t d2);
+void launch_sum_dim0(void *out, void *in, const StrideAndSize& s);
+void launch_sum_dim1(void *out, void *in, const StrideAndSize& s);
+void launch_sum_dim2(void *out, void *in, const StrideAndSize& s);
 
 void launch_matmul(void *out, void *left, void *right,
                    const StrideInfo &strides, const SizeInfo &sizes,
