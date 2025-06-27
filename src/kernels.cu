@@ -214,170 +214,353 @@ void launch_sub_strided(void *out, void *a, void *b, const StrideInfo &s,
                                       static_cast<float *>(b), s, total);
 }
 
-// Sum over dim-0 (collapse first index)
-// Each thread computes a single output element
+template <int AXIS>
+__global__ void sum_kernel(const float *__restrict__ in,
+                           float *__restrict__ out, int64_t d0, int64_t d1,
+                           int64_t d2) {
+  const int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-//   in - input data (flattened but with old dims)
-//  out - output data (with new dims)
-//   d0 - num elements of dim0
-// rest - remaining elements
-__global__ void k_sum_dim0(const float *__restrict__ in,
-                           float *__restrict__ out, int64_t d0, int64_t rest) {
-  int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx >= rest)
+  // Remaining elements -> each elem will compute
+  const int64_t num_elems = AXIS == 0 ? d1 * d2 : AXIS == 1 ? d0 * d2 : d0 * d1;
+
+  // const int64_t num_elems = d0 * d1 * d2;
+
+  extern __shared__ float sMem[];
+
+  if (idx >= num_elems)
     return;
 
+  int64_t stride = 0;
+  int64_t i0 = 0;
+  int64_t i1 = 0;
+  int64_t i2 = 0;
+  int64_t base = 0;
+  int64_t size = 0;
+
+  if constexpr (AXIS == 0) {
+    stride = d1 * d2;
+    i0 = idx / stride;
+    i1 = idx / d2;
+    i2 = idx % d2;
+    size = d0;
+    base = stride;
+  } else if constexpr (AXIS == 1) {
+
+  } else {
+  }
+
+  const float *p = in + idx;
   float acc = 0.f;
+
+#pragma unroll
+  for (int i = 0; i < size; ++i) {
+    acc += *p;
+    p += stride;
+  }
+
+  out[idx] = acc;
+}
+
+template <int AXIS>
+__global__ void sum_kernel_atomic(const float *__restrict__ in,
+                                  float *__restrict__ out, int64_t d0,
+                                  int64_t d1, int64_t d2) {
+  const int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+  // Remaining elements -> each elem will compute
+  // const int64_t num_elems = AXIS == 0 ? d1 * d2 : AXIS == 1 ? d0 * d2 : d0 *
+  // d1;
+
+  const int64_t num_elems = d0 * d1 * d2;
+
+  extern __shared__ float sMem[];
+
+  if (idx >= num_elems)
+    return;
+
+  int64_t stride = 0;
+  int64_t i0 = 0;
+  int64_t i1 = 0;
+  int64_t i2 = 0;
+  int64_t base = 0;
+  int64_t size = 0;
+
+  if constexpr (AXIS == 0) {
+    stride = d1 * d2;
+    i0 = idx / stride;
+    i1 = (idx / d2) % d1;
+    i2 = idx % d2;
+    size = d0;
+    base = stride;
+  } else if constexpr (AXIS == 1) {
+
+  } else {
+  }
 
   const float *p = in + idx;
 
-  // single thread goes over len(d0)
-  for (int64_t i = 0; i < d0; ++i, p += rest)
-    acc += *p;
-
-  out[idx] = acc;
+  atomicAdd(out + (i1 * d2 + i2), *p);
 }
 
-void launch_sum_dim0(void *out, void *in, int64_t d0, int64_t rest) {
-  int64_t n = rest;
-  int block = 256;
-  int grid = (n + block - 1) / block;
-  k_sum_dim0<<<grid, block>>>(static_cast<const float *>(in),
-                              static_cast<float *>(out), d0, rest);
-  CHECK_CUDA(cudaGetLastError());
+template <unsigned int BLOCK_SIZE>
+__global__ void reduction_kernel(const float *__restrict__ in,
+                                 float *__restrict__ out, const int64_t d0,
+                                 const int64_t d1, const int64_t d2) {
+  // Each block handles one output element at index (i1, i2)
+  // The grid should be launched as dim3(d2, d1)
+  const int64_t i1 = blockIdx.y;
+  const int64_t i2 = blockIdx.x;
+
+  // The output memory location for this block
+  const int64_t out_idx = i1 * d2 + i2;
+
+  // This thread's partial sum
+  float my_sum = 0.0f;
+
+  // Stride between consecutive elements along the reduction axis (d0)
+  const int64_t reduction_stride = d1 * d2;
+
+  // Each thread in the block cooperates to reduce the slice.
+  // We start at an offset corresponding to this thread's lane in the block.
+  // The loop strides by the block size, so the block as a whole sweeps
+  // through the entire slice along the d0 axis.
+  for (int64_t i = threadIdx.x; i < d0; i += BLOCK_SIZE) {
+    // *** CORRECT COALESCED READ ***
+    // Consecutive threads (threadIdx.x, threadIdx.x+1, ...) access
+    // consecutive memory locations because 'out_idx' is constant for the block
+    // and 'i' increases by 1 for each thread.
+    my_sum += in[out_idx + i * reduction_stride];
+  }
+
+  // --- In-block reduction using shared memory ---
+  extern __shared__ float sMem[];
+  sMem[threadIdx.x] = my_sum;
+  __syncthreads();
+
+  // Standard parallel reduction within the shared memory tile
+  for (unsigned int s = BLOCK_SIZE / 2; s > 0; s >>= 1) {
+    if (threadIdx.x < s) {
+      sMem[threadIdx.x] += sMem[threadIdx.x + s];
+    }
+    __syncthreads();
+  }
+
+  // Thread 0 of the block writes the final, reduced sum for this slice.
+  // No atomics are needed because each block writes to a unique location.
+  if (threadIdx.x == 0) {
+    out[out_idx] = sMem[0];
+  }
 }
 
-__global__ void k_sum_dim1(const float *__restrict__ in,
-                           float *__restrict__ out, int64_t d0, int64_t d1,
-                           int64_t d2) {
-  int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  int64_t n = d0 * d2; // total number of output elements
-  if (idx >= n)
+// __global__ void
+// tiled_sum_2d(const float* in, float* out, size_t d0, size_t d1, size_t d2) {
+
+//   const int64_t idx = threadIdx.x + blockDim.x * blockIdx.x
+//   // 16x16 tile and also block
+//   extern __shared__ float sMem[];
+
+//   size_t stride = 0;
+
+//   // transposed manner so warp can local reduce
+//   sMem[threadIdx.y + threadIdx.x * blockDim.y] = in[threadIdx.x + threadIdx.y
+//   * stride];
+
+//   __syncthreads();
+
+//   float v = 0.0f;
+//   #pragma unroll
+//   for (int off = 16; off > 0; off >>= 1)
+//     v += __shfl_down_sync(0xffffffff, v, off);
+
+//   if ((threadIdx.x & 31) == 0)
+//     atomicAdd(out + offset, v);
+// }
+
+template <typename T, unsigned int BLOCK_SIZE = 256, unsigned int VEC = 4>
+__global__ void reduce_axis0_kernel(const T *__restrict__ in,
+                                    T *__restrict__ out, size_t N, size_t M) {
+  const size_t colStart = (blockIdx.x * BLOCK_SIZE + threadIdx.x) * VEC;
+  if (colStart >= M)
     return;
 
-  // map flat idx to (i, k)
-  int64_t i = idx / d2;
-  int64_t k = idx % d2;
+  T accum[VEC];
+#pragma unroll
+  for (int v = 0; v < VEC; ++v)
+    accum[v] = T(0);
 
-  // in[i][0][k]
-  const float *p = in + i * d1 * d2 + k;
-  float acc = 0.f;
+  for (size_t row = 0; row < N; ++row) {
+    const size_t base = row * M + colStart;
+#pragma unroll
+    for (int v = 0; v < VEC; ++v) {
+      const size_t col = colStart + v;
+      if (col < M)
+        accum[v] += in[base + v];
+    }
+  }
 
-  for (int64_t j = 0; j < d1; ++j, p += d2) // move along j
-    acc += *p;
+#pragma unroll
+  for (int v = 0; v < VEC; ++v) {
+    const size_t col = colStart + v;
+    if (col < M)
+      out[col] = accum[v];
+  }
+}
 
-  out[idx] = acc;
+__global__ void warp_level_sum(const float *__restrict__ in,
+                               float *__restrict__ out, size_t dim_size,
+                               size_t offset,
+                               size_t n) // n = d0*d1*d2
+{
+  // We always launch this kernel as 1D block, the only difference can be a grid
+  // dim
+  int64_t j = blockIdx.x * blockDim.x + threadIdx.x;
+  int64_t i = blockIdx.y;
+  int64_t d = blockIdx.z;
+
+  int64_t idx = d * offset + i * dim_size + j;
+  int64_t out_idx = d * offset + i;
+
+  float v = (idx < n and j < dim_size) ? in[idx] : 0.0f;
+
+  extern __shared__ float sMem[];
+
+#pragma unroll
+  for (int off = 16; off > 0; off >>= 1)
+    v += __shfl_down_sync(0xffffffff, v, off);
+
+  if ((threadIdx.x & 31) == 0 and j < dim_size) {
+    sMem[threadIdx.x / 32] = v;
+  }
+
+  __syncthreads();
+
+  if (threadIdx.x == 0) {
+    float acc = 0.0f;
+    for (int i = 0; i < blockDim.x / 32; ++i) {
+      acc += sMem[i];
+    }
+    atomicAdd(out + out_idx, acc);
+  }
+}
+
+void launch_sum_dim0(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
+
+  // Contigious memory access -> warp level reduce!
+  if (d1 * d2 == 1) {
+    dim3 block = 256;
+    const auto total = d0 * d1 * d2;
+    dim3 grid = (total + 256 - 1) / 256;
+    warp_level_sum<<<grid, block, (256 / 32) * sizeof(float)>>>(
+        static_cast<const float *>(in), static_cast<float *>(out), d0, 0,
+        total);
+  } else {
+    // For strided pattern use tile + smem
+  }
 }
 
 void launch_sum_dim1(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
-  int64_t n = d0 * d2;
-  int block = 256;
-  int grid = (n + block - 1) / block;
-  k_sum_dim1<<<grid, block>>>(static_cast<const float *>(in),
-                              static_cast<float *>(out), d0, d1, d2);
+  // Contigious memory access -> warp level reduce!
+  if (d2 == 1) {
+    dim3 block(256, 1, 1);
+    const auto total = d0 * d1 * d2;
+    dim3 grid((d1 + block.x - 1) / block.x, d0, 1);
+    warp_level_sum<<<grid, block, (256 / 32) * sizeof(float)>>>(
+        static_cast<const float *>(in), static_cast<float *>(out), d1, 0,
+        total);
+  } else {
+    // For strided pattern use tile + smem
+    int block = 256;
+    int grid = (d1 + block - 1) / block;
+    sum_kernel<1><<<grid, block, d1 * sizeof(float)>>>(
+        static_cast<const float *>(in), static_cast<float *>(out), d0, d1, d2);
+  }
 
   CHECK_CUDA(cudaGetLastError());
-}
-
-__global__ void k_sum_dim2(const float *in, float *out, int64_t outer,
-                           int64_t d2) {
-  int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx >= outer)
-    return;
-
-  // in[i][j][0]
-  const float *p = in + idx * d2;
-  float acc = 0.f;
-
-  for (int64_t k = 0; k < d2; ++k)
-    acc += p[k];
-
-  out[idx] = acc;
 }
 
 void launch_sum_dim2(void *out, void *in, int64_t d0, int64_t d1, int64_t d2) {
-  int64_t outer = d0 * d1;
-  int block = 256;
-  int grid = (outer + block - 1) / block;
-  k_sum_dim2<<<grid, block>>>(static_cast<const float *>(in),
-                              static_cast<float *>(out), outer, d2);
+  // Since we only support Rank3 Tensors, this is always contigious memory
+  dim3 block(256, 1, 1);
+  const auto total = d0 * d1 * d2;
+  dim3 grid((block.x + d2 - 1) / block.x, d1, d0);
+
+  fmt::print(
+      "Launching warp_level_sum<<<({},{},{}), ({},{},{})>>>(in,out,{},{},{})\n",
+      grid.x, grid.y, grid.z, block.x, block.y, block.z, d2, d0 * d1, total);
+  warp_level_sum<<<grid, block, (256 / 32) * sizeof(float)>>>(
+      static_cast<const float *>(in), static_cast<float *>(out), d2, d1, total);
 
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void matmul_kernel(float* __restrict__ C,
-                              const float* __restrict__ A,
-                              const float* __restrict__ B,
-                              const StrideInfo strides,
-                              const SizeInfo  sizes,
-                              const int tile_width)
-{
-    const int col = blockIdx.x * blockDim.x + threadIdx.x;   // N‑index
-    const int row = blockIdx.y * blockDim.y + threadIdx.y;   // M‑index
+__global__ void matmul_kernel(float *__restrict__ C,
+                              const float *__restrict__ A,
+                              const float *__restrict__ B,
+                              const StrideInfo strides, const SizeInfo sizes,
+                              const int tile_width) {
+  const int col = blockIdx.x * blockDim.x + threadIdx.x; // N‑index
+  const int row = blockIdx.y * blockDim.y + threadIdx.y; // M‑index
 
-    const int M = strides.output_size[0];
-    const int N = strides.output_size[1];
-    const int K = sizes.a_size[1];                           // = sizes.b_size[0]
+  const int M = strides.output_size[0];
+  const int N = strides.output_size[1];
+  const int K = sizes.a_size[1]; // = sizes.b_size[0]
 
-    const bool in_bounds = (row < M) && (col < N);
+  const bool in_bounds = (row < M) && (col < N);
 
-    extern __shared__ float s_mem[];
-    float* As = s_mem;                                       // tile from A (M×K)
-    float* Bs = s_mem + tile_width * tile_width;             // tile from B (K×N)
+  extern __shared__ float s_mem[];
+  float *As = s_mem;                           // tile from A (M×K)
+  float *Bs = s_mem + tile_width * tile_width; // tile from B (K×N)
 
-    float acc = 0.0f;
-    const int num_tiles = (K + tile_width - 1) / tile_width;
+  float acc = 0.0f;
+  const int num_tiles = (K + tile_width - 1) / tile_width;
 
-    for (int t = 0; t < num_tiles; ++t) {
-        const int a_col = t * tile_width + threadIdx.x;      // K‑index into A
-        const int b_row = t * tile_width + threadIdx.y;      // K‑index into B
+  for (int t = 0; t < num_tiles; ++t) {
+    const int a_col = t * tile_width + threadIdx.x; // K‑index into A
+    const int b_row = t * tile_width + threadIdx.y; // K‑index into B
 
-        // Load current tiles into shared memory, zero‑padding out‑of‑range elements.
-        As[threadIdx.y * tile_width + threadIdx.x] =
-            (row < M && a_col < K) ? A[row * K + a_col] : 0.0f;
+    // Load current tiles into shared memory, zero‑padding out‑of‑range
+    // elements.
+    As[threadIdx.y * tile_width + threadIdx.x] =
+        (row < M && a_col < K) ? A[row * K + a_col] : 0.0f;
 
-        Bs[threadIdx.y * tile_width + threadIdx.x] =
-            (b_row < K && col < N) ? B[b_row * N + col] : 0.0f;
+    Bs[threadIdx.y * tile_width + threadIdx.x] =
+        (b_row < K && col < N) ? B[b_row * N + col] : 0.0f;
 
-        __syncthreads();
+    __syncthreads();
 
-        // Multiply–accumulate over the valid fragment length.
-        const int elems = min(tile_width, K - t * tile_width);
-        #pragma unroll
-        for (int e = 0; e < elems; ++e)
-            acc += As[threadIdx.y * tile_width + e] *
-                   Bs[e * tile_width + threadIdx.x];
+    // Multiply–accumulate over the valid fragment length.
+    const int elems = min(tile_width, K - t * tile_width);
+#pragma unroll
+    for (int e = 0; e < elems; ++e)
+      acc +=
+          As[threadIdx.y * tile_width + e] * Bs[e * tile_width + threadIdx.x];
 
-        __syncthreads();
-    }
+    __syncthreads();
+  }
 
-    if (in_bounds)
-        C[row * N + col] = acc;
+  if (in_bounds)
+    C[row * N + col] = acc;
 }
 
 void launch_matmul(void *out, void *left, void *right,
                    const StrideInfo &strides, const SizeInfo &sizes,
                    size_t total) {
-    constexpr int TILE = 16;
-    dim3 block(TILE, TILE);
+  constexpr int TILE = 16;
+  dim3 block(TILE, TILE);
 
-    const int M = strides.output_size[0];        // rows of C
-    const int N = strides.output_size[1];        // cols of C
+  const int M = strides.output_size[0]; // rows of C
+  const int N = strides.output_size[1]; // cols of C
 
-    dim3 grid((N + TILE - 1) / TILE,            // x‑dim ← N
-              (M + TILE - 1) / TILE);           // y‑dim ← M
+  dim3 grid((N + TILE - 1) / TILE,  // x‑dim ← N
+            (M + TILE - 1) / TILE); // y‑dim ← M
 
-    size_t smem_bytes = 2 * TILE * TILE * sizeof(float);
+  size_t smem_bytes = 2 * TILE * TILE * sizeof(float);
 
-    matmul_kernel<<<grid, block, smem_bytes>>>(
-        static_cast<float*>(out),
-        static_cast<const float*>(left),
-        static_cast<const float*>(right),
-        strides,
-        sizes,
-        TILE);
+  matmul_kernel<<<grid, block, smem_bytes>>>(
+      static_cast<float *>(out), static_cast<const float *>(left),
+      static_cast<const float *>(right), strides, sizes, TILE);
 
-    CHECK_CUDA(cudaGetLastError());
+  CHECK_CUDA(cudaGetLastError());
 }
 
 __global__ void relu_kernel(float *out, float *in, size_t total) {

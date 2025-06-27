@@ -34,7 +34,7 @@ void launch_mul(float *out, float *a, float *b, size_t numElems);
 void launch_mul_strided(void *dst, void *a, void *b, const StrideInfo &s,
                         size_t total);
 
-void launch_sum_dim0(void *out, void *in, int64_t d0, int64_t rest);
+void launch_sum_dim0(void *out, void *in, int64_t d0, int64_t d1, int64_t d2);
 void launch_sum_dim1(void *out, void *in, int64_t d0, int64_t d1, int64_t d2);
 void launch_sum_dim2(void *out, void *in, int64_t d0, int64_t d1, int64_t d2);
 

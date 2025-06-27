@@ -601,7 +601,7 @@ Tensor sum(const Tensor&t, int64_t dim, bool keep_dim) {
   }
 
   Tensor new_tensor =
-      empty(out_dims, new_rank, data_type, device, t.requires_grad());
+      zeros(out_dims, new_rank, data_type, device, t.requires_grad());
 
   auto *srcp = t.data();
   auto *dst = new_tensor.data();
@@ -609,9 +609,7 @@ Tensor sum(const Tensor&t, int64_t dim, bool keep_dim) {
   dims[1] = std::max(dims[1], 1l);
   dims[2] = std::max(dims[2], 1l);
   if (dim == 0) {
-    int64_t d0 = dims[0];
-    int64_t rest = dims[1] * dims[2];
-    launch_sum_dim0(dst, srcp, d0, rest);
+    launch_sum_dim0(dst, srcp, dims[0], dims[1], dims[2]);
   } else if (dim == 1) {
     launch_sum_dim1(dst, srcp, dims[0], dims[1], dims[2]);
   } else {
