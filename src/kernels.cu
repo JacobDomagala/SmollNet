@@ -331,7 +331,7 @@ void launch_sum_dim1(void *out, void *in, const StrideAndSize &s) {
         grid.x, grid.y, grid.z, BLOCK, 1, 1, d0, 0, total);
     warp_level_sum<BLOCK><<<grid, BLOCK>>>(static_cast<const float *>(in),
                                            static_cast<float *>(out), s.size[1],
-                                           s.stride[1], total);
+                                           d1, total);
   } else {
     constexpr size_t BLOCK = 256;
     constexpr int32_t vec_len = 2;
