@@ -612,6 +612,7 @@ Tensor sum(const Tensor&t, int64_t dim, bool keep_dim) {
   StrideAndSize s;
   s.size = dims;
   s.stride = t.strides();
+  s.rank = t.ndims();
 
   if (dim == 0) {
     launch_sum_dim0(dst, srcp, s);

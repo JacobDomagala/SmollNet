@@ -8,6 +8,8 @@ namespace smollnet {
 
 struct StrideAndSize {
   std::array<int64_t, 3> stride;
+
+  int rank;
   std::array<int64_t, 3> size;
 };
 
