@@ -251,6 +251,31 @@ __global__ void warp_level_sum(const float *__restrict__ in,
 }
 
 template <int32_t VEC_LEN>
+__global__ void strided_sum_2d(const float *__restrict__ in,
+                               float *__restrict__ out, int64_t dim_len,
+                               int64_t s0, int64_t s1, int64_t d1) {
+  const int64_t col = blockIdx.x * blockDim.x + threadIdx.x;
+  const int64_t row = blockIdx.y;
+  if (col >= d1)
+    return;
+
+  float acc = 0.0f;
+
+  const int64_t base_idx = row * s0 * VEC_LEN + col * s1;
+
+#pragma unroll
+  for (int elem = 0; elem < VEC_LEN; elem++) {
+    const int64_t my_idx = base_idx + elem * s0;
+    const float my_val =
+        (blockIdx.y * VEC_LEN + elem) < dim_len ? in[my_idx] : 0.0f;
+    acc += my_val;
+  }
+
+  // 'col' is linear, output Tensors should not be transposed
+  atomicAdd(out + col, acc);
+}
+
+template <int32_t VEC_LEN>
 __global__ void strided_sum_3d(const float *__restrict__ in,
                                float *__restrict__ out, int64_t dim_len,
                                int64_t s0, int64_t s1, int64_t s2, int64_t d1) {
@@ -261,12 +286,13 @@ __global__ void strided_sum_3d(const float *__restrict__ in,
 
   float acc = 0.0f;
 
-  const int64_t base_idx = row * s1 + col * s2 +  blockIdx.z * VEC_LEN * s0;
+  const int64_t base_idx = row * s1 + col * s2 + blockIdx.z * VEC_LEN * s0;
 
 #pragma unroll
   for (int elem = 0; elem < VEC_LEN; elem++) {
     const int64_t my_idx = base_idx + elem * s0;
-    const float my_val = (blockIdx.z * VEC_LEN + elem) < dim_len ? in[my_idx] : 0.0f;
+    const float my_val =
+        (blockIdx.z * VEC_LEN + elem) < dim_len ? in[my_idx] : 0.0f;
     acc += my_val;
   }
 
@@ -302,30 +328,42 @@ void launch_sum_dim0(void *out, void *in, const StrideAndSize &s) {
                                            total);
   } else {
     const size_t BLOCK = 256;
-    constexpr int32_t vec_len = 2;
+    constexpr int32_t VEC_LEN = 2;
     int64_t stride = 0;
     int64_t dim_len = d0;
     int64_t outer_dim = 0;
 
     dim3 grid;
     if (s.rank == 2) {
-      grid = dim3((BLOCK + d0 - 1) / BLOCK, d1, 1);
+      grid = dim3((BLOCK + d1 - 1) / BLOCK, (VEC_LEN + d0 - 1) / VEC_LEN, 1);
       stride = d1;
       outer_dim = d1;
+
+      fmt::print(
+          "Launching strided_sum_2d<<<({},{},{}), ({},{},{})>>>(in, out, {}, "
+          "{}, {}, {})\n",
+          grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, s.stride[0],
+          s.stride[1], outer_dim);
+
+      strided_sum_2d<VEC_LEN><<<grid, BLOCK>>>(
+          static_cast<const float *>(in), static_cast<float *>(out), dim_len,
+          s.stride[0], s.stride[1], outer_dim);
     } else {
       //  grid = dim3((BLOCK + d0 - 1) / BLOCK, d1, d2);
-      grid = dim3((BLOCK + d2 - 1) / BLOCK, d1, (vec_len + d0 - 1) / vec_len);
+      grid = dim3((BLOCK + d2 - 1) / BLOCK, d1, (VEC_LEN + d0 - 1) / VEC_LEN);
       stride = d1 * d2;
       outer_dim = d2;
+
+      fmt::print(
+          "Launching strided_sum_3d<<<({},{},{}), ({},{},{})>>>(in, out, {}, "
+          "{}, {}, {}, {})\n",
+          grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, s.stride[0],
+          s.stride[1], s.stride[2], outer_dim);
+
+      strided_sum_3d<VEC_LEN><<<grid, BLOCK>>>(
+          static_cast<const float *>(in), static_cast<float *>(out), dim_len,
+          s.stride[0], s.stride[1], s.stride[2], outer_dim);
     }
-
-    fmt::print("Launching strided_sum<<<({},{},{}), ({},{},{})>>>(in, out, {}, "
-               "{}, {})\n",
-               grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, stride, outer_dim);
-
-    strided_sum_3d<vec_len><<<grid, BLOCK>>>(static_cast<const float *>(in),
-                                             static_cast<float *>(out), dim_len,
-                                             s.stride[0], s.stride[1], s.stride[2], outer_dim);
   }
 
   CHECK_CUDA(cudaGetLastError());
@@ -361,7 +399,8 @@ void launch_sum_dim1(void *out, void *in, const StrideAndSize &s) {
     dim3 grid((d0 * d2 + 31) / 32, std::min((int)d0, 1024));
 
     // strided_sum_3d<vec_len><<<grid, BLOCK>>>(
-    //     static_cast<const float *>(in), static_cast<float *>(out), d0, d1, d2);
+    //     static_cast<const float *>(in), static_cast<float *>(out), d0, d1,
+    //     d2);
   }
 
   CHECK_CUDA(cudaGetLastError());
