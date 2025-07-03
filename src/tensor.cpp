@@ -15,7 +15,7 @@
 namespace smollnet {
 
 template <typename GradF>
-void SetupAutograd(const Tensor&l, const Tensor&r, const Tensor&n) {
+void SetupAutograd(const Tensor &l, const Tensor &r, const Tensor &n) {
   if (n.requires_grad()) {
     auto *meta = n.autograd();
 
@@ -25,7 +25,7 @@ void SetupAutograd(const Tensor&l, const Tensor&r, const Tensor&n) {
 }
 
 template <typename GradF>
-void SetupAutograd(const Tensor&n, const Tensor&other) {
+void SetupAutograd(const Tensor &n, const Tensor &other) {
   if (n.requires_grad()) {
     auto *meta = n.autograd();
 
@@ -194,7 +194,7 @@ Tensor Tensor::sum(int64_t dim, bool keep_dim) const {
   return ::smollnet::sum(*this, dim, keep_dim);
 }
 
-Tensor Tensor::mul(const Tensor&other) const {
+Tensor Tensor::mul(const Tensor &other) const {
   std::array<int64_t, 3> out_sz = {0, 0, 0};
   bool expand_me = false;
   bool expand_other = false;
@@ -247,7 +247,7 @@ Tensor Tensor::mul(const Tensor&other) const {
   return out;
 }
 
-Tensor Tensor::matmul(const Tensor&other) const {
+Tensor Tensor::matmul(const Tensor &other) const {
   return ::smollnet::matmul(*this, other);
 }
 
@@ -304,7 +304,7 @@ Tensor Tensor::add(const Tensor &other) const {
   return out;
 }
 
-Tensor Tensor::sub(const Tensor&other) const {
+Tensor Tensor::sub(const Tensor &other) const {
   std::array<int64_t, 3> out_sz = {0, 0, 0};
   bool expand_me = false;
   bool expand_other = false;
@@ -474,7 +474,7 @@ Tensor Tensor::copy() const {
   FREE FUNCTIONS
 */
 
-Tensor matmul(const Tensor&l, const Tensor&r) {
+Tensor matmul(const Tensor &l, const Tensor &r) {
   // Check dims
   ASSERT(l.ndims() >= 2 and r.ndims() >= 2,
          fmt::format("Cannot matrix multiply Tensors with fewer dims than 2! "
@@ -579,7 +579,7 @@ Tensor sigmoid(const Tensor &t) {
   return new_tensor;
 }
 
-Tensor sum(const Tensor&t, int64_t dim, bool keep_dim) {
+Tensor sum(const Tensor &t, int64_t dim, bool keep_dim) {
   auto dims = t.dims();
   auto new_rank = keep_dim ? t.ndims() : t.ndims() - 1;
   auto data_type = t.dtype();
@@ -609,26 +609,31 @@ Tensor sum(const Tensor&t, int64_t dim, bool keep_dim) {
   dims[1] = std::max(dims[1], 1l);
   dims[2] = std::max(dims[2], 1l);
 
-  StrideAndSize s;
-  s.size = dims;
-  s.stride = t.strides();
-  s.rank = t.ndims();
+  StrideAndSize s_input;
+  s_input.size = dims;
+  s_input.stride = t.strides();
+  s_input.rank = t.ndims();
+
+  StrideAndSize s_output;
+  s_output.size = new_tensor.dims();
+  s_output.stride = new_tensor.strides();
+  s_output.rank = new_tensor.ndims();
 
   if (dim == 0) {
-    launch_sum_dim0(dst, srcp, s);
+    launch_sum_dim0(dst, srcp, s_input, s_output);
   } else if (dim == 1) {
-    launch_sum_dim1(dst, srcp, s);
+    launch_sum_dim1(dst, srcp, s_input, s_output);
   } else {
     // dim==2
-    launch_sum_dim2(dst, srcp, s);
+    launch_sum_dim2(dst, srcp, s_input, s_output);
   }
 
   return new_tensor;
 }
 
-Tensor mul(const Tensor&left, const Tensor&right) { return left.mul(right); }
+Tensor mul(const Tensor &left, const Tensor &right) { return left.mul(right); }
 
-Tensor mse(const Tensor&pred, const Tensor&target) {
+Tensor mse(const Tensor &pred, const Tensor &target) {
   ASSERT(pred.dims() == target.dims(), "");
 
   bool requires_grad = any_requires_grad({pred, target});

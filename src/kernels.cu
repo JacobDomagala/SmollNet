@@ -217,15 +217,15 @@ void launch_sub_strided(void *out, void *a, void *b, const StrideInfo &s,
 template <size_t BLOCK_DIM = 256>
 __global__ void warp_level_sum(const float *__restrict__ in,
                                float *__restrict__ out, size_t dim_size,
-                               size_t in_offset, size_t out_offset, size_t n) {
+                               int64_t in_offset, int64_t out_offset, int64_t row_stride_in, int64_t row_stride_out, size_t n) {
   // We always launch this kernel as 1D block
   // the only difference can be a grid dim
   const int64_t col = blockIdx.x * blockDim.x + threadIdx.x;
   const int64_t row = blockIdx.y;
   const int64_t depth = blockIdx.z;
 
-  const int64_t idx = depth * in_offset + row * dim_size + col;
-  const int64_t out_idx = depth * out_offset + row;
+  const int64_t idx = depth * in_offset + row * row_stride_in + col;
+  const int64_t out_idx = depth * out_offset + row * row_stride_out;
 
   float v = (idx < n and col < dim_size) ? in[idx] : 0.0f;
 
@@ -353,20 +353,20 @@ __global__ void strided_sum_3d_dim_1(const float *__restrict__ in,
   atomicAdd(out + depth + col, acc);
 }
 
-void launch_sum_dim0(void *out, void *in, const StrideAndSize &s) {
+void launch_sum_dim0(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output) {
 
-  const auto d0 = s.size[0];
-  const auto d1 = s.size[1];
-  const auto d2 = s.size[2];
+  const auto d0 = s_input.size[0];
+  const auto d1 = s_input.size[1];
+  const auto d2 = s_input.size[2];
 
   // Contigious memory access -> warp level reduce!
-  if (s.stride[0] == 1) {
+  if (s_input.stride[0] == 1) {
     constexpr size_t BLOCK = 256;
-    const auto total = s.size[0] * s.size[1] * s.size[2];
+    const auto total = d0 * d1 * d2;
     dim3 grid;
-    if (s.rank == 1) {
+    if (s_input.rank == 1) {
       grid = dim3((BLOCK + d0 - 1) / BLOCK, 1, 1);
-    } else if (s.rank == 2) {
+    } else if (s_input.rank == 2) {
       grid = dim3((BLOCK + d0 - 1) / BLOCK, d1, 1);
     } else {
       grid = dim3((BLOCK + d0 - 1) / BLOCK, d1, d2);
@@ -378,7 +378,7 @@ void launch_sum_dim0(void *out, void *in, const StrideAndSize &s) {
         grid.x, grid.y, grid.z, BLOCK, 1, 1, d0, d1, total);
     warp_level_sum<BLOCK><<<grid, BLOCK>>>(static_cast<const float *>(in),
                                            static_cast<float *>(out), d0, d1,
-                                           d1, total);
+                                           d1, s_input.stride[0], s_output.stride[0], total);
   } else {
     const size_t BLOCK = 256;
     constexpr int32_t VEC_LEN = 2;
@@ -387,7 +387,7 @@ void launch_sum_dim0(void *out, void *in, const StrideAndSize &s) {
     int64_t outer_dim = 0;
 
     dim3 grid;
-    if (s.rank == 2) {
+    if (s_input.rank == 2) {
       grid = dim3((BLOCK + d1 - 1) / BLOCK, (VEC_LEN + d0 - 1) / VEC_LEN, 1);
       stride = d1;
       outer_dim = d1;
@@ -395,12 +395,12 @@ void launch_sum_dim0(void *out, void *in, const StrideAndSize &s) {
       fmt::print(
           "Launching strided_sum_2d<<<({},{},{}), ({},{},{})>>>(in, out, {}, "
           "{}, {}, {})\n",
-          grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, s.stride[0],
-          s.stride[1], outer_dim);
+          grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, s_input.stride[0],
+          s_input.stride[1], outer_dim);
 
       strided_sum_2d<VEC_LEN><<<grid, BLOCK>>>(
           static_cast<const float *>(in), static_cast<float *>(out), dim_len,
-          s.stride[0], s.stride[1], outer_dim);
+          s_input.stride[0], s_input.stride[1], outer_dim);
     } else {
       //  grid = dim3((BLOCK + d0 - 1) / BLOCK, d1, d2);
       grid = dim3((BLOCK + d2 - 1) / BLOCK, d1, (VEC_LEN + d0 - 1) / VEC_LEN);
@@ -410,30 +410,30 @@ void launch_sum_dim0(void *out, void *in, const StrideAndSize &s) {
       fmt::print(
           "Launching strided_sum_3d<<<({},{},{}), ({},{},{})>>>(in, out, {}, "
           "{}, {}, {}, {})\n",
-          grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, s.stride[0],
-          s.stride[1], s.stride[2], outer_dim);
+          grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, s_input.stride[0],
+          s_input.stride[1], s_input.stride[2], outer_dim);
 
       strided_sum_3d<VEC_LEN><<<grid, BLOCK>>>(
           static_cast<const float *>(in), static_cast<float *>(out), dim_len,
-          s.stride[0], s.stride[1], s.stride[2], outer_dim);
+          s_input.stride[0], s_input.stride[1], s_input.stride[2], outer_dim);
     }
   }
 
   CHECK_CUDA(cudaGetLastError());
 }
 
-void launch_sum_dim1(void *out, void *in, const StrideAndSize &s) {
-  const auto d0 = s.size[0];
-  const auto d1 = s.size[1];
-  const auto d2 = s.size[2];
+void launch_sum_dim1(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output) {
+  const auto d0 = s_input.size[0];
+  const auto d1 = s_input.size[1];
+  const auto d2 = s_input.size[2];
 
   // Contigious memory access -> warp level reduce!
-  if (s.stride[1] == 1) {
+  if (s_input.stride[1] == 1) {
     constexpr size_t BLOCK = 256;
-    const auto total = s.size[0] * s.size[1] * s.size[2];
+    const auto total = d0 * d1 * d2;
     dim3 grid;
 
-    if (s.rank == 2) {
+    if (s_input.rank == 2) {
       grid = dim3((BLOCK + d1 - 1) / BLOCK, d0, 1);
     } else {
       grid = dim3((BLOCK + d2 - 1) / BLOCK, d1, d0);
@@ -444,8 +444,8 @@ void launch_sum_dim1(void *out, void *in, const StrideAndSize &s) {
         "{}, {})\n",
         grid.x, grid.y, grid.z, BLOCK, 1, 1, d0, 0, total);
     warp_level_sum<BLOCK><<<grid, BLOCK>>>(static_cast<const float *>(in),
-                                           static_cast<float *>(out), s.size[1],
-                                           d1, d1, total);
+                                           static_cast<float *>(out), d1,
+                                           d1, d1, s_input.stride[0], s_output.stride[0], total);
   } else {
     const size_t BLOCK = 256;
     constexpr int32_t VEC_LEN = 64;
@@ -454,19 +454,19 @@ void launch_sum_dim1(void *out, void *in, const StrideAndSize &s) {
     int64_t outer_dim = 0;
 
     dim3 grid;
-    if (s.rank == 2) {
+    if (s_input.rank == 2) {
       grid = dim3((BLOCK + d0 - 1) / BLOCK, (VEC_LEN + d1 - 1) / VEC_LEN, 1);
       stride = d1;
 
       fmt::print("Launching strided_sum_2d_col_major<<<({},{},{}), "
                  "({},{},{})>>>(in, out, {}, "
                  "{}, {}, {})\n",
-                 grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, s.stride[0],
-                 s.stride[1], d0);
+                 grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, s_input.stride[0],
+                 s_input.stride[1], d0);
 
       strided_sum_2d_col_major<VEC_LEN><<<grid, BLOCK>>>(
           static_cast<const float *>(in), static_cast<float *>(out), dim_len,
-          s.stride[0], s.stride[1], d0);
+          s_input.stride[0], s_input.stride[1], d0);
     } else {
       grid = dim3((BLOCK + d2 - 1) / BLOCK, (VEC_LEN + d1 - 1) / VEC_LEN, d0);
       stride = d2;
@@ -475,25 +475,25 @@ void launch_sum_dim1(void *out, void *in, const StrideAndSize &s) {
       fmt::print("Launching strided_sum_3d_dim_1<<<({},{},{}), "
                  "({},{},{})>>>(in, out, {}, "
                  "{}, {}, {}, {})\n",
-                 grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, s.stride[0],
-                 s.stride[1], s.stride[2], outer_dim);
+                 grid.x, grid.y, grid.z, BLOCK, 1, 1, dim_len, s_input.stride[0],
+                 s_input.stride[1], s_input.stride[2], outer_dim);
 
       strided_sum_3d_dim_1<VEC_LEN><<<grid, BLOCK>>>(
           static_cast<const float *>(in), static_cast<float *>(out), dim_len,
-          s.stride[0], s.stride[1], s.stride[2], outer_dim);
+          s_input.stride[0], s_input.stride[1], s_input.stride[2], outer_dim);
     }
   }
 
   CHECK_CUDA(cudaGetLastError());
 }
 
-void launch_sum_dim2(void *out, void *in, const StrideAndSize &s) {
+void launch_sum_dim2(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output) {
 
-  const auto d0 = s.size[0];
-  const auto d1 = s.size[1];
-  const auto d2 = s.size[2];
+  const auto d0 = s_input.size[0];
+  const auto d1 = s_input.size[1];
+  const auto d2 = s_input.size[2];
 
-  if (s.stride[2] == 1) {
+  if (s_input.stride[2] == 1) {
     constexpr size_t BLOCK = 256;
     const auto total = d0 * d1 * d2;
     dim3 grid((BLOCK + d2 - 1) / BLOCK, d1, d0);
@@ -503,7 +503,7 @@ void launch_sum_dim2(void *out, void *in, const StrideAndSize &s) {
         grid.x, grid.y, grid.z, BLOCK, 1, 1, d2, d1, total);
     warp_level_sum<BLOCK><<<grid, BLOCK>>>(static_cast<const float *>(in),
                                            static_cast<float *>(out), d2,
-                                           d1 * d2, d1, total);
+                                           s_input.stride[0], s_output.stride[0], s_input.stride[1], s_output.stride[1], total);
     CHECK_CUDA(cudaGetLastError());
   } else {
     constexpr size_t BLOCK = 256;
