@@ -8,6 +8,7 @@ namespace smollnet {
 
 constexpr int32_t ROW_MAJOR = 0;
 constexpr int32_t COL_MAJOR = 1;
+constexpr int32_t DEPTH_MAJOR = 2;
 struct StrideAndSize {
   std::array<int64_t, 3> stride;
 
