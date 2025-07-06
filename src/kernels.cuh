@@ -9,10 +9,11 @@ namespace smollnet {
 constexpr int32_t ROW_MAJOR = 0;
 constexpr int32_t COL_MAJOR = 1;
 constexpr int32_t DEPTH_MAJOR = 2;
+
 struct StrideAndSize {
   std::array<int64_t, 3> stride;
 
-  int rank;
+  int64_t rank;
   std::array<int64_t, 3> size;
 };
 
@@ -22,7 +23,7 @@ struct StrideInfo {
 
   int64_t a_stride[3];
   int64_t b_stride[3];
-  int rank;
+  int64_t rank;
 };
 
 struct SizeInfo {
