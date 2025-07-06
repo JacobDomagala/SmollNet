@@ -14,6 +14,7 @@ add_library(${PROJECT_NAME}
     src/sgd.cpp
     src/layer_norm.cpp
     src/kernels.cu
+    src/sum.cu
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC

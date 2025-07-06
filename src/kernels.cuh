@@ -1,9 +1,21 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
 namespace smollnet {
+
+constexpr int32_t ROW_MAJOR = 0;
+constexpr int32_t COL_MAJOR = 1;
+constexpr int32_t DEPTH_MAJOR = 2;
+
+struct StrideAndSize {
+  std::array<int64_t, 3> stride;
+
+  int64_t rank;
+  std::array<int64_t, 3> size;
+};
 
 struct StrideInfo {
   // size of the output operation
@@ -11,7 +23,7 @@ struct StrideInfo {
 
   int64_t a_stride[3];
   int64_t b_stride[3];
-  int rank;
+  int64_t rank;
 };
 
 struct SizeInfo {
@@ -34,9 +46,9 @@ void launch_mul(float *out, float *a, float *b, size_t numElems);
 void launch_mul_strided(void *dst, void *a, void *b, const StrideInfo &s,
                         size_t total);
 
-void launch_sum_dim0(void *out, void *in, int64_t d0, int64_t rest);
-void launch_sum_dim1(void *out, void *in, int64_t d0, int64_t d1, int64_t d2);
-void launch_sum_dim2(void *out, void *in, int64_t d0, int64_t d1, int64_t d2);
+void launch_sum_dim0(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output);
+void launch_sum_dim1(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output);
+void launch_sum_dim2(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output);
 
 void launch_matmul(void *out, void *left, void *right,
                    const StrideInfo &strides, const SizeInfo &sizes,
