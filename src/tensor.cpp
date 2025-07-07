@@ -127,18 +127,29 @@ const std::array<int64_t, 3> &Tensor::strides() const noexcept {
 }
 
 void Tensor::print() const {
-  auto &t = *impl();
-  printf("Tensor: [Refcount: %ld addr: %p Rank: %ld dim(%ld, %ld, %ld) "
-         "strides(%ld, "
-         "%ld, %ld) "
-         "dtype:%s requires_grad:%s]\n\t Storage [Refcount: %ld addr: %p]\n",
-         impl_.use_count(), impl_.get(), t.ndim, t.sizes[0], t.sizes[1],
-         t.sizes[2], t.strides[0], t.strides[1], t.strides[2],
-         get_name(t.dtype), requires_grad() ? "true" : "false",
-         t.storage.use_count(), t.storage->ptr);
+  if (!initialized()) {
+    fmt::print("Uninitialized Tensor\n");
+  } else {
+    auto &t = *impl();
+    fmt::print(
+        "Tensor: [Refcount: {} addr: {} Rank: {} dim({}, {}, {}) "
+        "strides({}, {}, {}) "
+        "dtype:{} requires_grad:{}]\n\t Storage [Refcount: {} addr: {}]\n",
+        impl_.use_count(), fmt::ptr(impl_.get()), t.ndim, t.sizes[0],
+        t.sizes[1], t.sizes[2], t.strides[0], t.strides[1], t.strides[2],
+        get_name(t.dtype), requires_grad(), t.storage.use_count(),
+        t.storage->ptr);
+  }
 }
 
-void Tensor::print_elms() const {
+void Tensor::print_elms() const { fmt::print("{}", to_string()); }
+
+std::string Tensor::to_string() const {
+
+  if (!initialized()) {
+    return "[]";
+  }
+
   ASSERT(ndims() <= 3,
          fmt::format("Tensor::print_elms unsupported ndims=={}", ndims()));
 
@@ -149,41 +160,52 @@ void Tensor::print_elms() const {
   const auto &sizes = dims();
   const auto &stride = strides();
 
+  fmt::memory_buffer out;
+
   if (ndims() == 1) {
-    fmt::print("Tensor: ([");
+    fmt::format_to(std::back_inserter(out), "Tensor: ([");
     for (int64_t i = 0; i < sizes[0]; ++i) {
-      fmt::print("{:.4f}{}", raw_data[i * stride[0]],
-                 i == sizes[0] - 1 ? "" : ",  ");
+      fmt::format_to(std::back_inserter(out), "{:.4f}{}",
+                     raw_data[i * stride[0]], i == sizes[0] - 1 ? "" : ",  ");
     }
-    fmt::print("])\n");
+    fmt::format_to(std::back_inserter(out), "])\n");
   } else if (ndims() == 2) {
-    fmt::print("Tensor: ([");
+    fmt::format_to(std::back_inserter(out), "Tensor: ([");
     for (int64_t i = 0; i < sizes[0]; ++i) {
-      fmt::print("[");
+      fmt::format_to(std::back_inserter(out), "[");
       for (int64_t j = 0; j < sizes[1]; ++j) {
-        fmt::print("{:.4f}{}", raw_data[i * stride[0] + j * stride[1]],
-                   j == sizes[1] - 1 ? "" : ",  ");
+        fmt::format_to(std::back_inserter(out), "{:.4f}{}",
+                       raw_data[i * stride[0] + j * stride[1]],
+                       j == sizes[1] - 1 ? "" : ",  ");
       }
-      fmt::print("{}", i == sizes[0] - 1 ? "]" : "],\n          ");
+      fmt::format_to(std::back_inserter(out), "{}",
+                     i == sizes[0] - 1 ? "]" : "],\n          ");
     }
-    fmt::print("])\n");
+    fmt::format_to(std::back_inserter(out), "])\n");
   } else if (ndims() == 3) {
-    fmt::print("Tensor: ([");
+    fmt::format_to(std::back_inserter(out), "Tensor: ([");
     for (int64_t i = 0; i < sizes[0]; ++i) {
-      fmt::print("[");
+      fmt::format_to(std::back_inserter(out), "[");
       for (int64_t j = 0; j < sizes[1]; ++j) {
-        fmt::print("[");
+        fmt::format_to(std::back_inserter(out), "[");
         for (int64_t k = 0; k < sizes[2]; ++k) {
-          fmt::print("{:.4f}{}",
-                     raw_data[k * stride[2] + j * stride[1] + i * stride[0]],
-                     k == sizes[2] - 1 ? "" : ",  ");
+          fmt::format_to(
+              std::back_inserter(out), "{:.4f}{}",
+              raw_data[k * stride[2] + j * stride[1] + i * stride[0]],
+              k == sizes[2] - 1 ? "" : ",  ");
         }
-        fmt::print("{}", j == sizes[1] - 1 ? "]" : "],\n           ");
+        fmt::format_to(std::back_inserter(out), "{}",
+                       j == sizes[1] - 1 ? "]" : "],\n           ");
       }
-      fmt::print("{}", i == sizes[0] - 1 ? "]" : "],\n\n          ");
+      fmt::format_to(std::back_inserter(out), "{}",
+                     i == sizes[0] - 1 ? "]" : "],\n\n          ");
     }
-    fmt::print("])\n");
+    fmt::format_to(std::back_inserter(out), "])\n");
   }
+
+  fmt::format_to(std::back_inserter(out), "])\n");
+
+  return fmt::to_string(out);
 }
 
 size_t Tensor::total_bytes() const noexcept {
@@ -649,6 +671,21 @@ Tensor operator+(const Tensor &l, const Tensor &r) { return l.add(r); }
 Tensor operator-(const Tensor &l, const Tensor &r) { return l.sub(r); }
 
 Tensor operator*(const Tensor &l, const Tensor &r) { return l.mul(r); }
+
+Tensor &operator+=(Tensor &l, const Tensor &r) {
+  l = l + r;
+  return l;
+}
+
+Tensor &operator-=(Tensor &l, const Tensor &r) {
+  l = l - r;
+  return l;
+}
+
+Tensor &operator*=(Tensor &l, const Tensor &r) {
+  l = l * r;
+  return l;
+}
 
 Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d,
              bool requires_grad) {

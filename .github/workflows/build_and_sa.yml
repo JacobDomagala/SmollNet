@@ -33,6 +33,13 @@ jobs:
         comment_title: UBUNTU COMPILE RESULT
         compile_result_file: ${{ github.workspace }}/build/output.txt
 
+    - name: run tests
+      shell: bash
+      run: |
+        cd ${{ github.workspace }}/build
+        cp ${{ github.workspace }}/utils/tests.py .
+        python3 tests.py
+
     - name: setup init_script
       shell: bash
       run: |
@@ -61,4 +68,4 @@ jobs:
         clang_tidy_args: |
             -extra-arg=-std=c++20
         cppcheck_args: |
-            --enable=all --suppress=missingIncludeSystem --suppress=functionStatic --suppress=unusedFunction --inline-suppr --inconclusive --check-level=exhaustive
+            --enable=all --suppress=duplicateExpression --suppress=AssignmentIntegerToAddress --suppress=assignBoolToPointer --suppress=missingIncludeSystem --suppress=functionStatic --suppress=unusedFunction --inline-suppr --inconclusive --check-level=exhaustive

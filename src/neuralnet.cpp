@@ -30,6 +30,9 @@ Tensor GeLU::forward(Tensor &t) { return gelu(t); }
 std::vector<Tensor> GeLU::parameters() const { return {}; }
 void GeLU::print() const { printf("GeLU\n"); }
 
+
+Dense::Dense(std::vector<std::unique_ptr<Module>>&& modules) : layers_(std::move(modules)) {}
+
 Tensor Dense::forward(const Tensor &input) const {
   Tensor output = input;
   for (const auto &layer : layers_) {

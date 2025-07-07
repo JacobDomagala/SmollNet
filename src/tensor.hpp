@@ -4,8 +4,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
-#include <fmt/base.h>
 #include <memory>
 
 namespace smollnet {
@@ -76,6 +74,7 @@ public:
   const std::array<int64_t, 3>& strides() const noexcept;
   void print() const;
   void print_elms() const;
+  std::string to_string() const;
   size_t total_bytes() const noexcept;
 
   Tensor add(const Tensor&other) const;
@@ -109,6 +108,9 @@ Tensor sum(const Tensor&t, int64_t dim, bool keep_dim = false);
 Tensor operator+(const Tensor&l, const Tensor&r);
 Tensor operator-(const Tensor&l, const Tensor&r);
 Tensor operator*(const Tensor&l, const Tensor&r);
+Tensor &operator+=(Tensor&l, const Tensor &r);
+Tensor &operator-=(Tensor&l, const Tensor &r);
+Tensor &operator*=(Tensor&l, const Tensor &r);
 
 Tensor mse(const Tensor&pred, const Tensor&target);
 

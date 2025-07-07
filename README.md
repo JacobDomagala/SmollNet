@@ -1,7 +1,16 @@
-# SmollNet
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/wiki/JacobDomagala/SmollNet/logo.svg">
+  <img alt="logo" src="https://raw.githubusercontent.com/wiki/JacobDomagala/SmollNet/logo_white.svg" width="50%" height="50%">
+</picture>
+
+</div>
+
+---
+
 
 SmollNet is a small deep learning library written in pure CUDA/C++
-
 
 Example usage:
 
@@ -35,4 +44,42 @@ int main() {
   }
 }
 
+```
+
+Or in python:
+
+```python
+import smollnet
+
+batch_size = 10
+num_features = 128
+
+# Generate random data
+x = smollnet.rand(batch_size, num_features, requires_grad=True)
+y = smollnet.rand(batch_size, 1, requires_grad=True)
+
+# Create network
+network = smollnet.Dense(
+    smollnet.Linear(num_features, 64),
+    smollnet.GeLU(),
+    smollnet.Linear(64, 1))
+
+# Training loop
+num_epochs = 64
+for epoch in range(num_epochs):
+    # Forward pass
+    output = network.forward(x)
+
+    # Compute loss
+    loss = smollnet.mse(output, y)
+    loss.backward()
+
+    # Backward pass
+    optimizer = smollnet.sgd(network.parameters(), lr=0.005)
+
+    # Update parameters
+    optimizer.step()
+    optimizer.zero_grad()
+
+    print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss}")
 ```

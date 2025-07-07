@@ -3,9 +3,8 @@ cmake_minimum_required(VERSION 3.27)
 set(PROJECT_NAME SmollNet)
 project(${PROJECT_NAME} LANGUAGES CXX CUDA)
 
-
-find_package(CUDAToolkit REQUIRED)
 find_package(fmt REQUIRED)
+find_package(pybind11 REQUIRED)
 
 add_library(${PROJECT_NAME}
     src/tensor.cpp
@@ -13,22 +12,35 @@ add_library(${PROJECT_NAME}
     src/autograd.cpp
     src/sgd.cpp
     src/layer_norm.cpp
-    src/kernels.cu
-    src/sum.cu
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC
+set(CPP_LIBNAME SmollNet)
+
+set(CUDA_LIBNAME SmollNetCUDA)
+include(cmake/cuda.cmake)
+
+target_include_directories(${CPP_LIBNAME} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-        $<BUILD_INTERFACE:${CUDAToolkit_INCLUDE_DIRS}>
         $<INSTALL_INTERFACE:include>)
 
-target_link_libraries(${PROJECT_NAME} PUBLIC CUDA::cudart fmt::fmt)
-target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_23 cuda_std_20)
-target_compile_options(${PROJECT_NAME}
+target_link_libraries(${CPP_LIBNAME}
+  PUBLIC
+    ${CUDA_LIBNAME}
+    fmt::fmt
+
   PRIVATE
-    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:Debug>>:-G>
-    $<$<CONFIG:Debug>:-g>
+    pybind11::headers
+    pybind11::module
+)
+
+target_compile_features(${CPP_LIBNAME} PUBLIC cxx_std_23)
+set_target_properties(${CPP_LIBNAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+target_compile_options(${CPP_LIBNAME}
+  PRIVATE
+    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CONFIG:Debug>>:-g>
 )
 
 
 include(cmake/install.cmake)
+include(cmake/bindings.cmake)
