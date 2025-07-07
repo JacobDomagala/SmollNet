@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tensor.hpp"
+#include "smollnet.hpp"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -189,4 +189,101 @@ PYBIND11_MODULE(smollnet, m) {
         py::arg("keep_dim") = false);
 
   m.def("mse", &smollnet::mse);
+
+  py::class_<smollnet::SGD>(m, "sgd")
+      .def(py::init<std::vector<smollnet::Tensor>, float>(), "params"_a, "lr"_a,
+           "Initialize SGD optimizer with parameters and learning rate")
+
+      .def("step", &smollnet::SGD::step, "Perform one optimization step")
+
+      .def("zero_grad", &smollnet::SGD::zero_grad,
+           "Zero out gradients of all parameters");
+
+  py::class_<smollnet::Module, std::unique_ptr<smollnet::Module, py::nodelete>>(
+      m, "Module")
+      .def("forward", &smollnet::Module::forward, py::return_value_policy::move)
+      .def("print", &smollnet::Module::print)
+      .def("parameters", &smollnet::Module::parameters);
+
+  py::class_<smollnet::LayerNorm>(m, "layer_norm")
+      .def(py::init<>(), "Initialize LayerNorm layer")
+
+      // Methods
+      .def("compute", &smollnet::LayerNorm::compute, "t"_a,
+           "Compute layer normalization")
+
+      .def("__call__", &smollnet::LayerNorm::operator(), "t"_a,
+           "Call operator - same as compute")
+
+      .def("forward", &smollnet::LayerNorm::forward, "t"_a, "Forward pass")
+
+      .def("print", &smollnet::LayerNorm::print, "Print layer information")
+
+      .def("parameters", &smollnet::LayerNorm::parameters,
+           "Get all parameters of the layer")
+
+      // Public member access
+      .def_readwrite("weights", &smollnet::LayerNorm::weights,
+                     "Layer normalization weights")
+      .def_readwrite("bias", &smollnet::LayerNorm::bias,
+                     "Layer normalization bias");
+
+  py::class_<smollnet::Linear, smollnet::Module>(m, "Linear")
+      .def(py::init<int64_t, int64_t>(), "in_dim"_a, "out_dim"_a,
+           "Initialize Linear layer with input and output dimensions")
+
+      .def("forward", &smollnet::Linear::forward, "t"_a, "Forward pass")
+      .def("parameters", &smollnet::Linear::parameters, "Get all parameters")
+      .def("print", &smollnet::Linear::print, "Print layer information")
+
+      .def_readwrite("weights", &smollnet::Linear::weights)
+      .def_readwrite("bias", &smollnet::Linear::bias);
+
+  // ReLU activation
+  py::class_<smollnet::ReLU, smollnet::Module>(m, "ReLU")
+      .def(py::init<>(), "Initialize ReLU activation")
+
+      .def("forward", &smollnet::ReLU::forward, "t"_a, "Forward pass")
+      .def("parameters", &smollnet::ReLU::parameters, "Get all parameters")
+      .def("print", &smollnet::ReLU::print, "Print activation information");
+
+  // GeLU activation
+  py::class_<smollnet::GeLU, smollnet::Module>(m, "GeLU")
+      .def(py::init<>(), "Initialize GeLU activation")
+
+      .def("forward", &smollnet::GeLU::forward, "t"_a, "Forward pass")
+      .def("parameters", &smollnet::GeLU::parameters, "Get all parameters")
+      .def("print", &smollnet::GeLU::print, "Print activation information");
+
+  // Dense network - this is more complex due to the variadic template
+  // constructor
+  py::class_<smollnet::Dense>(m, "Dense")
+      .def(py::init([](py::args args) {
+        std::vector<std::unique_ptr<smollnet::Module>> modules;
+        for (auto &arg : args) {
+          if (py::isinstance<smollnet::Linear>(arg)) {
+            modules.push_back(std::make_unique<smollnet::Linear>(
+                arg.cast<smollnet::Linear>()));
+          } else if (py::isinstance<smollnet::ReLU>(arg)) {
+            modules.push_back(
+                std::make_unique<smollnet::ReLU>(arg.cast<smollnet::ReLU>()));
+          } else if (py::isinstance<smollnet::GeLU>(arg)) {
+            modules.push_back(
+                std::make_unique<smollnet::GeLU>(arg.cast<smollnet::GeLU>()));
+          } else if (py::isinstance<smollnet::LayerNorm>(arg)) {
+            modules.push_back(std::make_unique<smollnet::LayerNorm>(
+                arg.cast<smollnet::LayerNorm>()));
+          }
+        }
+        return smollnet::Dense(std::move(modules));
+      }))
+
+      .def("forward", &smollnet::Dense::forward, "input"_a,
+           "Forward pass through the network")
+      .def("parameters", &smollnet::Dense::parameters,
+           "Get all parameters from all layers")
+      .def("train", &smollnet::Dense::train, "input"_a, "targets"_a,
+           "lr"_a = 0.0001f, "num_epochs"_a = 32, "Train the network")
+      .def("print", &smollnet::Dense::print, "Print network information")
+      .def("print_grads", &smollnet::Dense::print_grads, "Print gradients");
 }

@@ -39,6 +39,8 @@ public:
      ...);
   }
 
+  Dense(std::vector<std::unique_ptr<Module>>&& modules);
+
   Tensor forward(const Tensor &input) const;
   std::vector<Tensor> parameters() const;
 
