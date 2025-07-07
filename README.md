@@ -1,9 +1,16 @@
-# SmollNet
+<div align="center">
 
-![logo](https://raw.githubusercontent.com/wiki/JacobDomagala/SmollNet/logo_256.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/wiki/JacobDomagala/SmollNet/logo.svg">
+  <img alt="logo" src="https://raw.githubusercontent.com/wiki/JacobDomagala/SmollNet/logo_white.svg" width="50%" height="50%">
+</picture>
+
+</div>
+
+---
+
 
 SmollNet is a small deep learning library written in pure CUDA/C++
-
 
 Example usage:
 
