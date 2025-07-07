@@ -108,6 +108,9 @@ Tensor sum(const Tensor&t, int64_t dim, bool keep_dim = false);
 Tensor operator+(const Tensor&l, const Tensor&r);
 Tensor operator-(const Tensor&l, const Tensor&r);
 Tensor operator*(const Tensor&l, const Tensor&r);
+Tensor &operator+=(Tensor&l, const Tensor &r);
+Tensor &operator-=(Tensor&l, const Tensor &r);
+Tensor &operator*=(Tensor&l, const Tensor &r);
 
 Tensor mse(const Tensor&pred, const Tensor&target);
 

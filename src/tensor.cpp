@@ -672,6 +672,21 @@ Tensor operator-(const Tensor &l, const Tensor &r) { return l.sub(r); }
 
 Tensor operator*(const Tensor &l, const Tensor &r) { return l.mul(r); }
 
+Tensor &operator+=(Tensor &l, const Tensor &r) {
+  l = l + r;
+  return l;
+}
+
+Tensor &operator-=(Tensor &l, const Tensor &r) {
+  l = l - r;
+  return l;
+}
+
+Tensor &operator*=(Tensor &l, const Tensor &r) {
+  l = l * r;
+  return l;
+}
+
 Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d,
              bool requires_grad) {
   auto storage = std::make_shared<Storage>();
