@@ -37,7 +37,8 @@ jobs:
       shell: bash
       run: |
         cd ${{ github.workspace }}/build
-        python3 ${{ github.workspace }}/utils/tests.py
+        cp ${{ github.workspace }}/utils/tests.py .
+        python3 tests.py
 
     - name: setup init_script
       shell: bash

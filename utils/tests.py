@@ -75,7 +75,7 @@ def test_tensor_operations():
     print(f"Multiplication result shape: {c_mul.dims()}")
 
     # Matrix multiplication
-    c_matmul = smollnet.matmul(a, b)
+    c_matmul = smollnet.matmul(a, a)
     print(f"Matrix multiplication result shape: {c_matmul.dims()}")
 
     # Test in-place operations
@@ -84,7 +84,9 @@ def test_tensor_operations():
     print(f"In-place addition result shape: {a_copy.dims()}")
 
     # Test tensor methods
-    print(f"Tensor a size: {a.size()}")
+    print(f"Tensor a size(0): {a.size(0)}")
+    print(f"Tensor a size(1): {a.size(1)}")
+    print(f"Tensor a size(2): {a.size(2)}")
     print(f"Tensor a ndims: {a.ndims()}")
     print(f"Tensor a numel: {a.numel()}")
     print(f"Tensor a strides: {a.strides()}")
@@ -94,7 +96,7 @@ def test_tensor_operations():
     print(f"Sum along dim 0 shape: {sum_result.dims()}")
 
     # Test transpose
-    a_t = a.transpose()
+    a_t = a.transpose(0,1)
     print(f"Transpose result shape: {a_t.dims()}")
 
     print("✓ Tensor operations tests passed!\n")
@@ -225,42 +227,36 @@ def test_training_loop():
     print("=== Testing Training Loop ===")
 
     # Create a simple regression problem
-    input_dim = 4
-    output_dim = 2
-    batch_size = 8
+    batch_size = 10
+    num_features = 128
+
+    # Generate random data
+    x = smollnet.rand(batch_size, num_features, requires_grad=True)
+    y = smollnet.rand(batch_size, 1, requires_grad=True)
 
     # Create network
     network = smollnet.Dense(
-        smollnet.Linear(input_dim, 8),
-        smollnet.ReLU(),
-        smollnet.Linear(8, output_dim)
+        smollnet.Linear(num_features, 64),
+        smollnet.GeLU(),
+        smollnet.Linear(64, 1)
     )
 
-    # Create optimizer
-    params = network.parameters()
-    optimizer = smollnet.sgd(params, lr=0.01)
-
-    print(f"Training network with {len(params)} parameters")
-
     # Training loop
-    num_epochs = 5
+    num_epochs = 64
     for epoch in range(num_epochs):
-        # Generate random data
-        x = smollnet.rand(batch_size, input_dim)
-        y = smollnet.rand(batch_size, output_dim)
-
         # Forward pass
         output = network.forward(x)
 
         # Compute loss
         loss = smollnet.mse(output, y)
+        loss.backward()
 
         # Backward pass
-        optimizer.zero_grad()
-        loss.backward()
+        optimizer = smollnet.sgd(network.parameters(), lr=0.005)
 
         # Update parameters
         optimizer.step()
+        optimizer.zero_grad()
 
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss}")
 
@@ -287,10 +283,6 @@ def test_gradient_computation():
     # Check gradients
     print(f"x has gradient: {x.grad().initialized()}")
     print(f"y has gradient: {y.grad().initialized()}")
-
-    # Zero gradients
-    x.zero_grad()
-    y.zero_grad()
 
     print("✓ Gradient computation tests passed!\n")
 
