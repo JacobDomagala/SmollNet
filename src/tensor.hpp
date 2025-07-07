@@ -4,8 +4,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
-#include <fmt/base.h>
 #include <memory>
 
 namespace smollnet {
