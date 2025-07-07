@@ -1,5 +1,3 @@
-#pragma once
-
 #include "smollnet.hpp"
 
 #include <pybind11/pybind11.h>

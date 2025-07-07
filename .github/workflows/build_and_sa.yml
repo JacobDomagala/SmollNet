@@ -33,6 +33,12 @@ jobs:
         comment_title: UBUNTU COMPILE RESULT
         compile_result_file: ${{ github.workspace }}/build/output.txt
 
+    - name: run tests
+      shell: bash
+      run: |
+        cd ${{ github.workspace }}/build
+        python3 ${{ github.workspace }}/utils/tests.py
+
     - name: setup init_script
       shell: bash
       run: |
