@@ -1,5 +1,6 @@
 #include "smollnet.hpp"
 
+#include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -135,35 +136,12 @@ PYBIND11_MODULE(smollnet, m) {
       .def("cpu", &smollnet::Tensor::cpu)
       .def("copy", &smollnet::Tensor::copy)
 
-      .def("__add__", &smollnet::operator+)
-      .def("__sub__", &smollnet::operator-)
-      .def("__mul__", &smollnet::operator*)
-      .def("__radd__", &smollnet::operator+)
-      .def("__rsub__",
-           [](const smollnet::Tensor &rhs, const smollnet::Tensor &lhs) {
-             return smollnet::operator-(lhs, rhs);
-           })
-      .def("__rmul__", &smollnet::operator*)
-
-      // In-place operators (optional)
-      .def("__iadd__",
-           [](smollnet::Tensor &self,
-              const smollnet::Tensor &other) -> smollnet::Tensor & {
-             self = self + other;
-             return self;
-           })
-      .def("__isub__",
-           [](smollnet::Tensor &self,
-              const smollnet::Tensor &other) -> smollnet::Tensor & {
-             self = self - other;
-             return self;
-           })
-      .def("__imul__",
-           [](smollnet::Tensor &self,
-              const smollnet::Tensor &other) -> smollnet::Tensor & {
-             self = self * other;
-             return self;
-           });
+      .def(py::self + py::self)
+      .def(py::self - py::self)
+      .def(py::self * py::self)
+      .def(py::self += py::self)
+      .def(py::self -= py::self)
+      .def(py::self *= py::self);
 
   py::enum_<smollnet::DataType>(m, "DataType")
       .value("f32", smollnet::DataType::f32)
