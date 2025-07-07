@@ -102,7 +102,7 @@ PYBIND11_MODULE(smollnet, m) {
       .def("device", &smollnet::Tensor::device)
       .def("dtype", &smollnet::Tensor::dtype)
 
-      .def("backward", &smollnet::Tensor::backward)
+      .def("backward", &smollnet::Tensor::backward, py::arg("grad_output") = smollnet::Tensor{})
       .def("zero_grad", &smollnet::Tensor::zero_grad)
       .def("requires_grad", &smollnet::Tensor::requires_grad)
       .def("grad", &smollnet::Tensor::grad)
