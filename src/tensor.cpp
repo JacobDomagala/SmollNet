@@ -139,6 +139,10 @@ void Tensor::print() const {
 }
 
 void Tensor::print_elms() const {
+  fmt::print("{}", to_string());
+}
+
+std::string Tensor::to_string() const {
   ASSERT(ndims() <= 3,
          fmt::format("Tensor::print_elms unsupported ndims=={}", ndims()));
 
@@ -149,41 +153,48 @@ void Tensor::print_elms() const {
   const auto &sizes = dims();
   const auto &stride = strides();
 
+  fmt::memory_buffer out;
+
+
   if (ndims() == 1) {
-    fmt::print("Tensor: ([");
+    fmt::format_to(std::back_inserter(out),"Tensor: ([");
     for (int64_t i = 0; i < sizes[0]; ++i) {
-      fmt::print("{:.4f}{}", raw_data[i * stride[0]],
+      fmt::format_to(std::back_inserter(out),"{:.4f}{}", raw_data[i * stride[0]],
                  i == sizes[0] - 1 ? "" : ",  ");
     }
-    fmt::print("])\n");
+    fmt::format_to(std::back_inserter(out),"])\n");
   } else if (ndims() == 2) {
-    fmt::print("Tensor: ([");
+    fmt::format_to(std::back_inserter(out),"Tensor: ([");
     for (int64_t i = 0; i < sizes[0]; ++i) {
-      fmt::print("[");
+      fmt::format_to(std::back_inserter(out),"[");
       for (int64_t j = 0; j < sizes[1]; ++j) {
-        fmt::print("{:.4f}{}", raw_data[i * stride[0] + j * stride[1]],
+        fmt::format_to(std::back_inserter(out),"{:.4f}{}", raw_data[i * stride[0] + j * stride[1]],
                    j == sizes[1] - 1 ? "" : ",  ");
       }
-      fmt::print("{}", i == sizes[0] - 1 ? "]" : "],\n          ");
+      fmt::format_to(std::back_inserter(out),"{}", i == sizes[0] - 1 ? "]" : "],\n          ");
     }
-    fmt::print("])\n");
+    fmt::format_to(std::back_inserter(out),"])\n");
   } else if (ndims() == 3) {
-    fmt::print("Tensor: ([");
+    fmt::format_to(std::back_inserter(out),"Tensor: ([");
     for (int64_t i = 0; i < sizes[0]; ++i) {
-      fmt::print("[");
+      fmt::format_to(std::back_inserter(out),"[");
       for (int64_t j = 0; j < sizes[1]; ++j) {
-        fmt::print("[");
+        fmt::format_to(std::back_inserter(out),"[");
         for (int64_t k = 0; k < sizes[2]; ++k) {
-          fmt::print("{:.4f}{}",
+          fmt::format_to(std::back_inserter(out),"{:.4f}{}",
                      raw_data[k * stride[2] + j * stride[1] + i * stride[0]],
                      k == sizes[2] - 1 ? "" : ",  ");
         }
-        fmt::print("{}", j == sizes[1] - 1 ? "]" : "],\n           ");
+        fmt::format_to(std::back_inserter(out),"{}", j == sizes[1] - 1 ? "]" : "],\n           ");
       }
-      fmt::print("{}", i == sizes[0] - 1 ? "]" : "],\n\n          ");
+      fmt::format_to(std::back_inserter(out),"{}", i == sizes[0] - 1 ? "]" : "],\n\n          ");
     }
-    fmt::print("])\n");
+    fmt::format_to(std::back_inserter(out),"])\n");
   }
+
+  fmt::format_to(std::back_inserter(out), "])\n");
+
+  return fmt::to_string(out);
 }
 
 size_t Tensor::total_bytes() const noexcept {

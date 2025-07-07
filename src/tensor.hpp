@@ -76,6 +76,7 @@ public:
   const std::array<int64_t, 3>& strides() const noexcept;
   void print() const;
   void print_elms() const;
+  std::string to_string() const;
   size_t total_bytes() const noexcept;
 
   Tensor add(const Tensor&other) const;

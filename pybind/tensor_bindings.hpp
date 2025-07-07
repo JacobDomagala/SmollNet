@@ -8,164 +8,79 @@
 using namespace pybind11::literals;
 namespace py = pybind11;
 
-void bind_rand_overloads(pybind11::module &m) {
-  // 1D version
-  m.def(
-      "rand",
-      [](int64_t dim0, smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[1] = {dim0};
-        return smollnet::rand<1>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
+// Generic templated function to bind tensor creation functions
+template<typename FuncType>
+void bind_tensor_creation_overloads(pybind11::module& m, const char* func_name, FuncType&& func) {
+    // 1D version
+    m.def(func_name,
+        [func](int64_t dim0, smollnet::DataType dtype = smollnet::DataType::f32,
+               smollnet::Device device = smollnet::Device::CUDA,
+               bool requires_grad = false) {
+            int64_t dims_array[1] = {dim0};
+            return func.template operator()<1>(dims_array, dtype, device, requires_grad);
+        },
+        "dim0"_a, "dtype"_a = smollnet::DataType::f32,
+        "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
 
-  // 2D version
-  m.def(
-      "rand",
-      [](int64_t dim0, int64_t dim1,
-         smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[2] = {dim0, dim1};
-        return smollnet::rand<2>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dim1"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
+    // 2D version
+    m.def(func_name,
+        [func](int64_t dim0, int64_t dim1,
+               smollnet::DataType dtype = smollnet::DataType::f32,
+               smollnet::Device device = smollnet::Device::CUDA,
+               bool requires_grad = false) {
+            int64_t dims_array[2] = {dim0, dim1};
+            return func.template operator()<2>(dims_array, dtype, device, requires_grad);
+        },
+        "dim0"_a, "dim1"_a, "dtype"_a = smollnet::DataType::f32,
+        "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
 
-  // 3D version
-  m.def(
-      "rand",
-      [](int64_t dim0, int64_t dim1, int64_t dim2,
-         smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[3] = {dim0, dim1, dim2};
-        return smollnet::rand<3>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dim1"_a, "dim2"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
+    // 3D version
+    m.def(func_name,
+        [func](int64_t dim0, int64_t dim1, int64_t dim2,
+               smollnet::DataType dtype = smollnet::DataType::f32,
+               smollnet::Device device = smollnet::Device::CUDA,
+               bool requires_grad = false) {
+            int64_t dims_array[3] = {dim0, dim1, dim2};
+            return func.template operator()<3>(dims_array, dtype, device, requires_grad);
+        },
+        "dim0"_a, "dim1"_a, "dim2"_a, "dtype"_a = smollnet::DataType::f32,
+        "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
 }
 
-void bind_zeros_overloads(pybind11::module &m) {
-  // 1D version
-  m.def(
-      "zeros",
-      [](int64_t dim0, smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[1] = {dim0};
-        return smollnet::zeros<1>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
+// Function objects for each tensor creation function
+struct RandFunctor {
+    template<size_t N>
+    auto operator()(const int64_t (&dims)[N], smollnet::DataType dtype, smollnet::Device device, bool requires_grad) const {
+        return smollnet::rand<N>(dims, dtype, device, requires_grad);
+    }
+};
 
-  // 2D version
-  m.def(
-      "zeros",
-      [](int64_t dim0, int64_t dim1,
-         smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[2] = {dim0, dim1};
-        return smollnet::zeros<2>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dim1"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
+struct ZerosFunctor {
+    template<size_t N>
+    auto operator()(const int64_t (&dims)[N], smollnet::DataType dtype, smollnet::Device device, bool requires_grad) const {
+        return smollnet::zeros<N>(dims, dtype, device, requires_grad);
+    }
+};
 
-  // 3D version
-  m.def(
-      "zeros",
-      [](int64_t dim0, int64_t dim1, int64_t dim2,
-         smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[3] = {dim0, dim1, dim2};
-        return smollnet::zeros<3>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dim1"_a, "dim2"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
-}
+struct OnesFunctor {
+    template<size_t N>
+    auto operator()(const int64_t (&dims)[N], smollnet::DataType dtype, smollnet::Device device, bool requires_grad) const {
+        return smollnet::ones<N>(dims, dtype, device, requires_grad);
+    }
+};
 
-void bind_ones_overloads(pybind11::module &m) {
-  // 1D version
-  m.def(
-      "ones",
-      [](int64_t dim0, smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[1] = {dim0};
-        return smollnet::ones<1>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
+struct EmptyFunctor {
+    template<size_t N>
+    auto operator()(const int64_t (&dims)[N], smollnet::DataType dtype, smollnet::Device device, bool requires_grad) const {
+        return smollnet::empty<N>(dims, dtype, device, requires_grad);
+    }
+};
 
-  // 2D version
-  m.def(
-      "ones",
-      [](int64_t dim0, int64_t dim1,
-         smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[2] = {dim0, dim1};
-        return smollnet::ones<2>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dim1"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
-
-  // 3D version
-  m.def(
-      "ones",
-      [](int64_t dim0, int64_t dim1, int64_t dim2,
-         smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[3] = {dim0, dim1, dim2};
-        return smollnet::ones<3>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dim1"_a, "dim2"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
-}
-
-void bind_empty_overloads(pybind11::module &m) {
-  // 1D version
-  m.def(
-      "empty",
-      [](int64_t dim0, smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[1] = {dim0};
-        return smollnet::empty<1>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
-
-  // 2D version
-  m.def(
-      "empty",
-      [](int64_t dim0, int64_t dim1,
-         smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[2] = {dim0, dim1};
-        return smollnet::empty<2>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dim1"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
-
-  // 3D version
-  m.def(
-      "empty",
-      [](int64_t dim0, int64_t dim1, int64_t dim2,
-         smollnet::DataType dtype = smollnet::DataType::f32,
-         smollnet::Device device = smollnet::Device::CUDA,
-         bool requires_grad = false) {
-        int64_t dims_array[3] = {dim0, dim1, dim2};
-        return smollnet::empty<3>(dims_array, dtype, device, requires_grad);
-      },
-      "dim0"_a, "dim1"_a, "dim2"_a, "dtype"_a = smollnet::DataType::f32,
-      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
+void bind_tensor_creation_functions(pybind11::module& m) {
+    bind_tensor_creation_overloads(m, "rand", RandFunctor{});
+    bind_tensor_creation_overloads(m, "zeros", ZerosFunctor{});
+    bind_tensor_creation_overloads(m, "ones", OnesFunctor{});
+    bind_tensor_creation_overloads(m, "empty", EmptyFunctor{});
 }
 
 // Single module definition
@@ -174,7 +89,8 @@ PYBIND11_MODULE(smollnet, m) {
 
   // Bind the Tensor class
   py::class_<smollnet::Tensor>(m, "Tensor")
-      .def(py::init<>())
+      .def("__repr__", &smollnet::Tensor::to_string, "String representation of the tensor")
+
       .def("initialized", &smollnet::Tensor::initialized)
 
       .def("size", &smollnet::Tensor::size)
@@ -196,7 +112,7 @@ PYBIND11_MODULE(smollnet, m) {
 
       .def("add", &smollnet::Tensor::add)
       .def("sub", &smollnet::Tensor::sub)
-      .def("sum", &smollnet::Tensor::sum)
+      .def("sum", &smollnet::Tensor::sum, py::arg("dim"), py::arg("keep_dim") = false)
       .def("mul", &smollnet::Tensor::mul)
       .def("matmul", &smollnet::Tensor::matmul)
 
@@ -216,8 +132,5 @@ PYBIND11_MODULE(smollnet, m) {
       .value("CUDA", smollnet::Device::CUDA)
       .export_values();
 
-  bind_rand_overloads(m);
-  bind_zeros_overloads(m);
-  bind_ones_overloads(m);
-  bind_empty_overloads(m);
+  bind_tensor_creation_functions(m);
 }
