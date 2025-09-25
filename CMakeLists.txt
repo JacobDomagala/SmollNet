@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.27)
 set(PROJECT_NAME SmollNet)
 project(${PROJECT_NAME} LANGUAGES CXX CUDA)
 
+option(SMOLLNET_BUILD_BENCHMARKS "Build benchmark targets" ON)
+
 find_package(fmt REQUIRED)
 find_package(pybind11 REQUIRED)
 
@@ -44,3 +46,7 @@ target_compile_options(${CPP_LIBNAME}
 
 include(cmake/install.cmake)
 include(cmake/bindings.cmake)
+
+if (SMOLLNET_BUILD_BENCHMARKS)
+  add_subdirectory(test)
+endif()
