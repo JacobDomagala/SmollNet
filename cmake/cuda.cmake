@@ -4,6 +4,7 @@ add_library(${CUDA_LIBNAME}
   STATIC
     src/kernels.cu
     src/sum.cu
+    src/variance.cu
 )
 
 target_link_libraries(${CUDA_LIBNAME}
@@ -29,6 +30,7 @@ target_compile_features(${CPP_LIBNAME} PUBLIC cxx_std_23 cuda_std_20)
 
 target_compile_options(${CUDA_LIBNAME}
   PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>
     $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:Debug>>:-G>
     $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-fPIC>
 )

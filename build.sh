@@ -14,7 +14,7 @@ CLANG=/usr/local/bin
 
 mkdir -p "$BUILD"
 
-BUILD_TYPE=Debug
+BUILD_TYPE=Release
 
 if ! conan profile list | grep -q "default"; then
     echo "Conan 'default' profile not found. Detecting and creating it..."
@@ -49,7 +49,7 @@ SOURCE=$SOURCE/example
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
   -DCMAKE_CXX_COMPILER="$CLANG/clang++" \
-  -DSmollNet_ROOT=${BUILD}/smollnet \
+  -DSmollNet_ROOT="${BUILD}/smollnet" \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF \
   --fresh | tee -a "$BUILD/output.txt"
 
