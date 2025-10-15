@@ -160,13 +160,13 @@ inline DisplayField field(std::string_view label, std::string_view value_color,
 
 inline void print_fields(std::initializer_list<DisplayField> fields) {
   bool is_first = true;
-  for (const auto &field : fields) {
+  for (const auto &cur_field : fields) {
     if (!is_first) {
       fmt::print("  ");
     }
     is_first = false;
-    fmt::print("{}={}", paint(field.label, ansi::kDim),
-               paint(field.value, field.value_color));
+    fmt::print("{}={}", paint(cur_field.label, ansi::kDim),
+               paint(cur_field.value, cur_field.value_color));
   }
   fmt::print("\n");
 }

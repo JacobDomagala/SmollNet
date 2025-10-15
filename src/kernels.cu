@@ -514,7 +514,7 @@ void launch_mse_grad(void *grad, void *pred, void *target, float coeff,
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void variance_step1_kernel(float *out, float *in, float *mean,
+__global__ void variance_step1_kernel(float *__restrict__ out, const float *__restrict__ in, const float *__restrict__ mean,
                                       const size_t batch_size,
                                       const size_t num_features) {
   auto idx = threadIdx.x + blockDim.x * blockIdx.x;
@@ -522,8 +522,9 @@ __global__ void variance_step1_kernel(float *out, float *in, float *mean,
   if (idx >= batch_size * num_features)
     return;
 
-  int batch_num = idx / num_features;
-  out[idx] = powf(mean[batch_num] - in[idx], 2);
+  const int batch_num = idx / num_features;
+  const float diff = in[idx] - mean[batch_num];
+  out[idx] = diff * diff;
 }
 
 __global__ void variance_step2_kernel(float *out, float *in,
