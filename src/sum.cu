@@ -58,6 +58,7 @@ warp_level_sum(const float *__restrict__ in, float *__restrict__ out,
 
   if (threadIdx.x == 0) {
     float acc = 0.0f;
+  #pragma unroll
     for (int i = 0; i < BLOCK_DIM / 32; ++i) {
       acc += sMem[i];
     }
