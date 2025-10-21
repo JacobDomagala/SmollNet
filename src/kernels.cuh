@@ -10,6 +10,7 @@ constexpr int32_t ROW_MAJOR = 0;
 constexpr int32_t COL_MAJOR = 1;
 constexpr int32_t DEPTH_MAJOR = 2;
 
+
 struct StrideAndSize {
   std::array<int64_t, 3> stride;
 
@@ -30,6 +31,13 @@ struct SizeInfo {
   int64_t a_size[3];
   int64_t b_size[3];
 };
+
+enum class WelfordType : uint8_t{
+  Mean,
+  PopulationVariance,
+  SampleVariance
+};
+
 
 void launch_fill(float *ptr, size_t numElems, float val);
 void launch_random_init(void *out, size_t total);
@@ -85,5 +93,5 @@ void launch_layer_norm_grad(void *out, void *normalized_input,
                             void *summed_scale, void *summed_scaled_input,
                             size_t batch_size, size_t num_features);
 
-void launch_welford(void* in, void* out, size_t num_features, size_t size);
+void launch_welford(void* in, void* out, size_t num_features, size_t size, int32_t dim, WelfordType type);
 } // namespace smollnet
