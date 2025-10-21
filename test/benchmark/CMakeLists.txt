@@ -1,8 +1,8 @@
-add_executable(variance_benchmark
-  variance_benchmark.cpp
+add_executable(welford_benchmark
+  welford_benchmark.cpp
 )
 
-target_link_libraries(variance_benchmark
+target_link_libraries(welford_benchmark
   PRIVATE
     ${CPP_LIBNAME}
 )

@@ -2,6 +2,7 @@
 #include <cuda.h>
 
 #include "kernels.cuh"
+#include "welford_internal.inl"
 namespace smollnet {
 
 struct WelfordData {
@@ -167,13 +168,14 @@ welford_row_second_pass(const WelfordData *__restrict__ in,
   }
 }
 
+template <int32_t CHUNK_SIZE>
 __global__ void welford_column_first_pass(const float *__restrict__ in,
                                           WelfordData *__restrict__ out,
                                           const size_t num_features,
                                           const size_t size) {
 
   int feature = threadIdx.x + blockIdx.x * blockDim.x;
-  int batch = (threadIdx.y + blockIdx.y * blockDim.y) * 32;
+  int batch = (threadIdx.y + blockIdx.y * blockDim.y) * CHUNK_SIZE;
 
   if (feature >= num_features)
     return;
@@ -184,7 +186,7 @@ __global__ void welford_column_first_pass(const float *__restrict__ in,
   const uint32_t output_idx = num_features * blockIdx.y + feature;
 
 #pragma unroll
-  for (uint32_t part = 0; part < 32; ++part) {
+  for (uint32_t part = 0; part < CHUNK_SIZE; ++part) {
     const uint32_t offset = part * num_features;
     uint32_t idx = base_idx + offset;
 
@@ -237,35 +239,60 @@ __global__ void welford_column_second_pass(const WelfordData *__restrict__ in,
 
 void launch_welford(void *in, void *out, size_t num_features, size_t batch_size,
                     int32_t dim, WelfordType type) {
-  constexpr int32_t CHUNK_SIZE = 4;
-  constexpr int32_t BLOCK_DIM = 256;
+  if (num_features == 0 || batch_size == 0)
+    return;
 
-  dim3 block_size(BLOCK_DIM, 1);
-  size_t features_dim = (num_features + BLOCK_DIM - 1) / BLOCK_DIM;
-  uint32_t batch_dim = (batch_size + CHUNK_SIZE - 1) / CHUNK_SIZE;
-  dim3 grid_size(features_dim, batch_dim);
+  dim3 block_size(welford_internal::kBlockDim, 1);
 
-  void *staging_buffer;
-  cudaMalloc(&staging_buffer, sizeof(WelfordData) * features_dim * batch_size);
+  void *staging_buffer = nullptr;
+  const size_t feature_blocks =
+      (num_features + welford_internal::kBlockDim - 1) /
+      welford_internal::kBlockDim;
 
   if (dim == 0) {
-    welford_row_first_pass<CHUNK_SIZE, BLOCK_DIM><<<grid_size, block_size>>>(
-        static_cast<const float *>(in),
-        static_cast<WelfordData *>(staging_buffer), num_features, batch_size);
 
-    const int32_t num_iter = (features_dim + BLOCK_DIM - 1) / BLOCK_DIM;
-    welford_row_second_pass<BLOCK_DIM><<<batch_size, block_size>>>(
+    const uint32_t row_chunks =
+        (batch_size + welford_internal::kRowChunkSize - 1) /
+        welford_internal::kRowChunkSize;
+
+    dim3 grid_size(feature_blocks, row_chunks);
+
+    cudaMalloc(&staging_buffer,
+               sizeof(WelfordData) * feature_blocks * batch_size);
+
+    welford_row_first_pass<welford_internal::kRowChunkSize,
+                           welford_internal::kBlockDim>
+        <<<grid_size, block_size>>>(static_cast<const float *>(in),
+                                    static_cast<WelfordData *>(staging_buffer),
+                                    num_features, batch_size);
+
+    const int32_t num_iter =
+        (feature_blocks + welford_internal::kBlockDim - 1) /
+        welford_internal::kBlockDim;
+
+    welford_row_second_pass<welford_internal::kBlockDim>
+        <<<batch_size, block_size>>>(
         static_cast<const WelfordData *>(staging_buffer),
-        static_cast<float *>(out), features_dim, num_iter, type);
+        static_cast<float *>(out), static_cast<int32_t>(feature_blocks),
+        num_iter, type);
   } else if (dim == 1) {
-    welford_column_first_pass<<<grid_size, block_size>>>(
-        static_cast<const float *>(in),
-        static_cast<WelfordData *>(staging_buffer), num_features,
-        num_features * batch_size);
+    const uint32_t col_chunks =
+        (batch_size + welford_internal::kColChunkSize - 1) /
+        welford_internal::kColChunkSize;
 
-    welford_column_second_pass<<<features_dim, block_size>>>(
+    dim3 grid_size(feature_blocks, col_chunks);
+
+    cudaMalloc(&staging_buffer,
+               sizeof(WelfordData) * num_features * col_chunks);
+
+    welford_column_first_pass<welford_internal::kColChunkSize>
+        <<<grid_size, block_size>>>(static_cast<const float *>(in),
+                                    static_cast<WelfordData *>(staging_buffer),
+                                    num_features, num_features * batch_size);
+
+    welford_column_second_pass<<<feature_blocks, block_size>>>(
         static_cast<const WelfordData *>(staging_buffer),
-        static_cast<float *>(out), num_features, batch_dim, type);
+        static_cast<float *>(out), num_features, col_chunks, type);
   }
 
   cudaFree(staging_buffer);

@@ -4,7 +4,7 @@ add_library(${CUDA_LIBNAME}
   STATIC
     src/kernels.cu
     src/sum.cu
-    src/variance.cu
+    src/welford.cu
 )
 
 target_link_libraries(${CUDA_LIBNAME}

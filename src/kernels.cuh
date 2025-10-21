@@ -92,5 +92,6 @@ void launch_layer_norm_grad(void *out, void *normalized_input,
                             void *summed_scale, void *summed_scaled_input,
                             size_t batch_size, size_t num_features);
 
-void launch_welford(void* in, void* out, size_t dim1_len, size_t dim0_len, int32_t dim, WelfordType type);
+void launch_welford(void *in, void *out, size_t dim1_len, size_t dim0_len,
+                    int32_t dim, WelfordType type);
 } // namespace smollnet
