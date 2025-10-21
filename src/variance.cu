@@ -34,14 +34,15 @@ __device__ __forceinline__ WelfordData merge(const WelfordData &a,
 
   float inv_n = __fdividef(1.0f, (float)out.count);
   out.mean = a.mean + delta * b.count * inv_n;
-  out.M2   = a.M2 + b.M2 + delta * delta * a.count * b.count * inv_n;
+  out.M2 = a.M2 + b.M2 + delta * delta * a.count * b.count * inv_n;
   return out;
 }
 
 template <int32_t CHUNK_SIZE, uint32_t BLOCK_DIM>
-__global__ void
-welford_kernel_row(const float *__restrict__ in, WelfordData *__restrict__ out,
-                   const size_t num_features, const size_t num_rows) {
+__global__ void welford_row_first_pass(const float *__restrict__ in,
+                                       WelfordData *__restrict__ out,
+                                       const size_t num_features,
+                                       const size_t num_rows) {
 
   int feature = threadIdx.x + blockIdx.x * blockDim.x;
   int batch = blockIdx.y;
@@ -94,6 +95,51 @@ welford_kernel_row(const float *__restrict__ in, WelfordData *__restrict__ out,
     }
 
     localData = {};
+  }
+}
+
+template <int32_t BLOCK_DIM>
+__global__ void welford_row_second_pass(const WelfordData *__restrict__ in,
+                                        float *__restrict__ out,
+                                        const int32_t num_elems, const int32_t num_iter) {
+  const auto base_idx = threadIdx.x + blockIdx.x * blockDim.x;
+
+  bool is_valid = base_idx < num_elems;
+
+  __shared__ WelfordData sMem[BLOCK_DIM / 32];
+
+  for (int32_t iter = 0; iter < num_iter; ++iter) {
+
+    const auto idx = base_idx + iter * BLOCK_DIM;
+    is_valid = idx < num_elems;
+
+    WelfordData val = is_valid ? in[idx] : WelfordData{};
+
+#pragma unroll
+    for (int32_t off = 16; off > 0; off >>= 1) {
+      auto count = __shfl_down_sync(0xffffffff, val.count, off);
+      auto m2 = __shfl_down_sync(0xffffffff, val.M2, off);
+      auto mean = __shfl_down_sync(0xffffffff, val.mean, off);
+
+      val = merge(val, WelfordData{count, mean, m2});
+    }
+
+    if (threadIdx.x % 32 == 0) {
+      sMem[threadIdx.x / 32] = val;
+    }
+
+    __syncthreads();
+
+    if(threadIdx.x == 0) {
+      WelfordData local{};
+      #pragma unroll
+      for(int32_t i = 0; i < BLOCK_DIM / 32; ++i) {
+        merge(local, sMem[i]);
+      }
+
+      out[blockIdx.y] = local.mean;
+    }
+
   }
 }
 
@@ -171,9 +217,14 @@ void launch_welford(void *in, void *out, size_t num_features,
   void *staging_buffer;
   cudaMalloc(&staging_buffer, sizeof(WelfordData) * features_dim * batch_size);
 
-  welford_kernel_row<CHUNK_SIZE, BLOCK_DIM><<<grid_size, block_size>>>(
+  welford_row_first_pass<CHUNK_SIZE, BLOCK_DIM><<<grid_size, block_size>>>(
       static_cast<const float *>(in),
       static_cast<WelfordData *>(staging_buffer), num_features, batch_size);
+
+  const int32_t num_iter = (features_dim + BLOCK_DIM - 1) / BLOCK_DIM;
+  welford_row_second_pass<BLOCK_DIM><<<batch_size, block_size>>>(
+      static_cast<const WelfordData *>(staging_buffer),
+      static_cast<float *>(out), features_dim, num_iter);
 
   // welford_kernel_column<<<grid_size, block_size>>>(
   //     static_cast<const float *>(in),
