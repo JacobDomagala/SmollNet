@@ -82,8 +82,7 @@ void launch_mse_grad(void *grad, void *pred, void *target, float coeff,
 
 // NORM
 void launch_mean_2d(void *out, void *in, size_t d0, size_t d1);
-void launch_variance(void *variance, void *staging_buffer, void *in, void *mean,
-                     size_t batch_size, size_t num_features);
+
 void launch_layer_norm(void *out, void *features, void *mean, void *variance,
                        void *gamma, void *beta, size_t batch_size,
                        size_t num_features);
@@ -93,5 +92,5 @@ void launch_layer_norm_grad(void *out, void *normalized_input,
                             void *summed_scale, void *summed_scaled_input,
                             size_t batch_size, size_t num_features);
 
-void launch_welford(void* in, void* out, size_t num_features, size_t size, int32_t dim, WelfordType type);
+void launch_welford(void* in, void* out, size_t dim1_len, size_t dim0_len, int32_t dim, WelfordType type);
 } // namespace smollnet

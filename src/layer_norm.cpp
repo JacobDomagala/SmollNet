@@ -21,10 +21,7 @@ Tensor LayerNorm::compute(const Tensor &t) {
   launch_mean_2d(mean.data(), t.data(), t.size(0), t.size(1));
 
   auto variance = zeros({t.size(0), 1}, t.dtype(), t.device());
-  auto staging = zeros(t.dims().data(), t.ndims(), t.dtype(), t.device(),
-                       t.requires_grad());
-  launch_variance(variance.data(), staging.data(), t.data(), mean.data(),
-                  t.size(0), t.size(1));
+  launch_welford(t.data(), variance.data(), t.size(1), t.size(0), 0, WelfordType::PopulationVariance);
 
   auto normalized = zeros(t.dims().data(), t.ndims(), t.dtype(), t.device(), t.requires_grad());
   launch_layer_norm(normalized.data(), t.data(), mean.data(), variance.data(),

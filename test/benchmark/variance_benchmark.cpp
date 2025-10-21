@@ -102,28 +102,16 @@ struct BenchmarkResult {
 
 BenchmarkResult run_case(const BenchmarkCase &cfg,
                          const bench::RunConfig &run_cfg) {
-  Tensor input =
-      rand({static_cast<int64_t>(cfg.batch_size),
-            static_cast<int64_t>(cfg.num_features)},
-           DataType::f32, Device::CUDA);
-  Tensor mean = zeros({static_cast<int64_t>(cfg.batch_size), 1}, DataType::f32,
-                      Device::CUDA);
-  Tensor variance =
-      zeros({static_cast<int64_t>(cfg.batch_size), 1}, DataType::f32,
-            Device::CUDA);
-  Tensor staging =
-      zeros({static_cast<int64_t>(cfg.batch_size),
-             static_cast<int64_t>(cfg.num_features)},
-            DataType::f32, Device::CUDA);
+  Tensor input = rand({static_cast<int64_t>(cfg.batch_size),
+                       static_cast<int64_t>(cfg.num_features)},
+                      DataType::f32, Device::CUDA);
 
-  // Mean is prepared once so the timed region isolates variance work.
-  launch_mean_2d(mean.data(), input.data(), cfg.batch_size, cfg.num_features);
-  CHECK_CUDA(cudaGetLastError());
-  CHECK_CUDA(cudaDeviceSynchronize());
+  Tensor variance = zeros({static_cast<int64_t>(cfg.batch_size), 1},
+                          DataType::f32, Device::CUDA);
 
   const auto timing = bench::measure_cuda_operation(run_cfg, [&] {
-    launch_variance(variance.data(), staging.data(), input.data(), mean.data(),
-                    cfg.batch_size, cfg.num_features);
+    launch_welford(input.data(), variance.data(), cfg.num_features,
+                   cfg.batch_size, 0, WelfordType::PopulationVariance);
   });
 
   const double total_elems = static_cast<double>(cfg.batch_size) *
@@ -159,8 +147,7 @@ void print_case(const BenchmarkCase &cfg, const BenchmarkResult &result) {
                    result.min_ms),
       bench::field("avg_ms", bench::ansi::kBoldYellow, "{:>9.6f}",
                    result.avg_ms),
-      bench::field("max_ms", bench::ansi::kBoldRed, "{:>9.6f}",
-                   result.max_ms),
+      bench::field("max_ms", bench::ansi::kBoldRed, "{:>9.6f}", result.max_ms),
       bench::field("bandwidth_GBps", bench::ansi::kBoldMagenta, "{:>9.3f}",
                    result.effective_gb_per_sec),
       bench::field("variance", bench::ansi::kBoldCyan, "{:.6f}",
