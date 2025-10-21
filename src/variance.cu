@@ -31,8 +31,10 @@ __device__ __forceinline__ WelfordData merge(const WelfordData &a,
   WelfordData out;
   float delta = b.mean - a.mean;
   out.count = a.count + b.count;
-  out.mean = a.mean + delta * b.count / out.count;
-  out.M2 = a.M2 + b.M2 + delta * delta * a.count * b.count / out.count;
+
+  float inv_n = __fdividef(1.0f, (float)out.count);
+  out.mean = a.mean + delta * b.count * inv_n;
+  out.M2   = a.M2 + b.M2 + delta * delta * a.count * b.count * inv_n;
   return out;
 }
 
@@ -73,8 +75,6 @@ welford_kernel_row(const float *__restrict__ in, WelfordData *__restrict__ out,
 
       localData = merge(localData, WelfordData{count, mean, m2});
     }
-
-    __syncthreads();
 
     if (threadIdx.x % 32 == 0) {
       sMem[threadIdx.x / 32] = localData;
@@ -160,8 +160,8 @@ __global__ void welford_column_second_pass(const WelfordData *__restrict__ in,
 void launch_welford(void *in, void *out, size_t num_features,
                     size_t batch_size) {
 
-  constexpr int32_t CHUNK_SIZE = 32;
-  constexpr int32_t BLOCK_DIM = 128;
+  constexpr int32_t CHUNK_SIZE = 4;
+  constexpr int32_t BLOCK_DIM = 256;
 
   dim3 block_size(BLOCK_DIM, 1);
   size_t features_dim = (num_features + BLOCK_DIM - 1) / BLOCK_DIM;

@@ -16,8 +16,8 @@ target_link_libraries(${CUDA_LIBNAME}
 target_include_directories(${CUDA_LIBNAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-    $<BUILD_INTERFACE:${CUDAToolkit_INCLUDE_DIRS}>
-    $<INSTALL_INTERFACE:include>)
+    $<INSTALL_INTERFACE:include>
+)
 
 set_target_properties(${CUDA_LIBNAME}
   PROPERTIES
@@ -26,11 +26,9 @@ set_target_properties(${CUDA_LIBNAME}
     POSITION_INDEPENDENT_CODE ON
 )
 
-target_compile_features(${CPP_LIBNAME} PUBLIC cxx_std_23 cuda_std_20)
+target_compile_features(${CUDA_LIBNAME} PUBLIC cxx_std_23 cuda_std_20)
 
 target_compile_options(${CUDA_LIBNAME}
   PRIVATE
-    $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>
-    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<CONFIG:Debug>>:-G>
-    $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-fPIC>
+    -lineinfo
 )
