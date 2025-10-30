@@ -79,17 +79,16 @@ jobs:
       run: |
         cat > init_script.sh <<EOF
         #!/bin/bash
-        set -euo pipefail
+        
+        # 1. Fix the GPG keyring issue mentioned in your logs
+        cp /var/cuda-repo-ubuntu2404-12-8-local/cuda-47045A0D-keyring.gpg /usr/share/keyrings/
 
-        root_dir="\${1}"
-        cuda_dir="\${root_dir}/.ci-cache/cuda"
-
-        cp "\${cuda_dir}/${CUDA_PIN_FILE}" /etc/apt/preferences.d/cuda-repository-pin-600
-        dpkg -i "\${cuda_dir}/${CUDA_DEB_FILE}"
-        cp /var/cuda-repo-ubuntu2404-12-8-local/cuda-*-keyring.gpg /usr/share/keyrings/
-
+        # 2. Update the package list
         apt-get update
-        apt-get -y install cuda-toolkit-12-8
+
+        # 3. Install ONLY headers and core dev files
+        # cuda-cccl contains Thrust, CUB, and Libcu++ headers
+        apt-get install -y cuda-headers-12-8 cuda-cccl-12-8 cuda-cudart-dev-12-8
         EOF
 
         chmod +x init_script.sh
