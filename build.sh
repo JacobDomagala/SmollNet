@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -eo pipefail
 
 if [ -t 1 ]; then
   BLUE=$'\033[1;34m'
@@ -24,16 +24,23 @@ BUILD="$SOURCE/build"
 mkdir -p "$BUILD"
 
 BUILD_TYPE="${BUILD_TYPE:-Release}"
-CUDA_ROOT="${CUDA_ROOT:-${CUDA_HOME:-/usr/local/cuda-12.8}}"
+CUDA_ROOT="${CUDA_ROOT:-${CUDA_HOME:-/usr/local/cuda-13.2}}"
 CUDA_COMPILER="${CUDA_COMPILER:-${CMAKE_CUDA_COMPILER:-$CUDA_ROOT/bin/nvcc}}"
-CXX_COMPILER="${CXX_COMPILER:-${CMAKE_CXX_COMPILER:-${CXX:-clang++}}}"
+CXX_COMPILER="${CXX_COMPILER:-${CMAKE_CXX_COMPILER:-${CXX:-}}}"
 CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES:-89}"
+CUDA_STANDARD="${CUDA_STANDARD:-20}"
+CXX_COMPILER_ARGS=()
+
+if [ -n "$CXX_COMPILER" ]; then
+  CXX_COMPILER_ARGS=(-DCMAKE_CXX_COMPILER="$CXX_COMPILER")
+fi
 
 info "Build configuration"
 info_value "CUDA root" "$CUDA_ROOT"
 info_value "CUDA compiler" "$CUDA_COMPILER"
-info_value "C++ compiler" "$CXX_COMPILER"
+info_value "C++ compiler" "${CXX_COMPILER:-CMake default}"
 info_value "CUDA architectures" "$CUDA_ARCHITECTURES"
+info_value "CUDA standard" "$CUDA_STANDARD"
 
 if ! conan profile list | grep -q "default"; then
     info "Conan 'default' profile not found. Detecting and creating it..."
@@ -53,9 +60,10 @@ fi
 
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-  -DCMAKE_CXX_COMPILER="$CXX_COMPILER" \
+  "${CXX_COMPILER_ARGS[@]}" \
   -DCMAKE_CUDA_COMPILER="$CUDA_COMPILER" \
   -DCMAKE_CUDA_ARCHITECTURES="$CUDA_ARCHITECTURES" \
+  -DCMAKE_CUDA_STANDARD="$CUDA_STANDARD" \
   -DCUDAToolkit_ROOT="$CUDA_ROOT" \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DCMAKE_INSTALL_PREFIX="$BUILD/smollnet" \
@@ -67,7 +75,7 @@ cmake --build "$BUILD" --target install | tee -a "$BUILD/output.txt"
 SOURCE=$SOURCE/example
 cmake -S "$SOURCE" -B "$BUILD" -G Ninja \
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-  -DCMAKE_CXX_COMPILER="$CXX_COMPILER" \
+  "${CXX_COMPILER_ARGS[@]}" \
   -DSmollNet_ROOT="${BUILD}/smollnet" \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF \
   --fresh | tee -a "$BUILD/output.txt"
