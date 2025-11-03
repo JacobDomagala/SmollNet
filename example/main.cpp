@@ -5,15 +5,14 @@
 using namespace smollnet;
 
 int main() {
-  constexpr int batch_size = 10;
-  constexpr int num_features = 20;
+  constexpr int batch_size = 1024;
+  constexpr int num_features = 2048;
 
   manual_seed(1234);
   Tensor input = rand({batch_size, num_features}, DataType::f32, Device::CUDA);
-  input.print_elms();
+ // input.print_elms();
   
-  Tensor targets = rand({batch_size, 1}, DataType::f32, Device::CUDA);
-  targets.print_elms();
+  Tensor result = mse(input,input);
   // auto targets_h = targets.cpu();
 
   // auto net = Dense(Linear(num_features, 64), LayerNorm(), GeLU(), Linear(64, 1));
