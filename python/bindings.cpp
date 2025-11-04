@@ -234,7 +234,7 @@ PYBIND11_MODULE(smollnet, m) {
   // Dense network - this is more complex due to the variadic template
   // constructor
   py::class_<smollnet::Dense>(m, "Dense")
-      .def(py::init([](py::args args) {
+      .def(py::init([](const py::args& args) {
         std::vector<std::unique_ptr<smollnet::Module>> modules;
         for (auto &arg : args) {
           if (py::isinstance<smollnet::Linear>(arg)) {

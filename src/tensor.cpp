@@ -72,7 +72,7 @@ TensorImpl::TensorImpl(const int64_t *dims, int64_t rank, DataType type) {
 */
 
 Tensor::Tensor() : impl_(nullptr) {}
-Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(impl) {}
+Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(std::move(impl)) {}
 
 bool Tensor::initialized() const noexcept { return impl_ != nullptr; }
 bool Tensor::expanded() const noexcept { return impl_->expanded; }

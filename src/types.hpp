@@ -5,9 +5,9 @@
 
 namespace smollnet {
 
-enum class Device { CUDA, CPU };
+enum class Device : uint8_t { CUDA, CPU };
 
-enum class DataType {
+enum class DataType : uint8_t {
   f8,
   f16,
   f32,
@@ -19,7 +19,7 @@ enum class DataType {
   i64
 };
 
-enum class Optimizer {
+enum class Optimizer : uint8_t {
   SGD
 };
 
