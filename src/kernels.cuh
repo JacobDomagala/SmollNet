@@ -40,7 +40,8 @@ enum class WelfordType : uint8_t{
 
 
 void launch_fill(float *ptr, size_t numElems, float val);
-void launch_random_init(void *out, size_t total);
+void launch_random_init(unsigned long long seed);
+void launch_random_fill(void* out, size_t total);
 void launch_negative(void *ptr, size_t total);
 
 // Binary OPS

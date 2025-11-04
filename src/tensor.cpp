@@ -733,11 +733,15 @@ Tensor ones(const int64_t *dims, size_t rank, DataType t, Device d,
   return Tensor{tensor};
 }
 
+void manual_seed(unsigned long long seed) {
+  launch_random_init(seed);
+}
+
 Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad) {
   auto tensor = empty(dims, rank, t, d, requires_grad);
 
-  launch_random_init(tensor.data(), tensor.numel());
+  launch_random_fill(tensor.data(), tensor.numel());
 
   return Tensor{tensor};
 }

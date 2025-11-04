@@ -153,6 +153,8 @@ PYBIND11_MODULE(smollnet, m) {
       .export_values();
 
   bind_tensor_creation_functions(m);
+  m.def("manual_seed", &smollnet::manual_seed, "seed"_a,
+        "Initialize the default random generator seed");
 
   m.def("relu", &smollnet::relu);
   m.def("gelu", &smollnet::gelu);
