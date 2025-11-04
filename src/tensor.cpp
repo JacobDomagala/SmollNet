@@ -393,7 +393,7 @@ Tensor Tensor::transpose(int d0, int d1) const {
   }
 
   Tensor return_tensor;
-  return_tensor.impl_ = view;
+  return_tensor.impl_ = std::move(view);
 
   return return_tensor;
 }
@@ -703,7 +703,7 @@ Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d,
   storage->device = d;
 
   auto impl = std::make_shared<TensorImpl>(dims, rank, t);
-  impl->storage = storage;
+  impl->storage = std::move(storage);
   impl->requires_grad = requires_grad;
   if (requires_grad) {
     impl->grad = std::make_shared<AutogradMeta>();
