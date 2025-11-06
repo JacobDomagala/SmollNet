@@ -32,6 +32,27 @@ def test_tensor_creation():
     print(f"2D ones shape: {t2d_ones.dims()}")
     print(f"2D rand shape: {t2d_rand.dims()}")
 
+    print("\nCreating like tensors...")
+    t2d_full_like = smollnet.full_like(t2d_rand, 3.0)
+    t2d_zeros_like = smollnet.zeros_like(t2d_rand)
+    t2d_ones_like = smollnet.ones_like(t2d_rand, requires_grad=True)
+    t2d_rand_like = smollnet.rand_like(t2d_rand)
+
+    assert t2d_full_like.dims() == t2d_rand.dims()
+    assert t2d_zeros_like.dims() == t2d_rand.dims()
+    assert t2d_ones_like.dims() == t2d_rand.dims()
+    assert t2d_rand_like.dims() == t2d_rand.dims()
+    assert t2d_full_like.dtype() == t2d_rand.dtype()
+    assert t2d_zeros_like.dtype() == t2d_rand.dtype()
+    assert t2d_ones_like.device() == t2d_rand.device()
+    assert not t2d_zeros_like.requires_grad()
+    assert t2d_ones_like.requires_grad()
+
+    print(f"2D full_like shape: {t2d_full_like.dims()}")
+    print(f"2D zeros_like shape: {t2d_zeros_like.dims()}")
+    print(f"2D ones_like shape: {t2d_ones_like.dims()}")
+    print(f"2D rand_like shape: {t2d_rand_like.dims()}")
+
     # Test 3D tensors
     print("\nCreating 3D tensors...")
     t3d_zeros = smollnet.zeros(2, 3, 4)
