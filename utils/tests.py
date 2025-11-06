@@ -77,19 +77,21 @@ def test_manual_seed():
     """Test that manual_seed changes and resets CPU random state."""
     print("=== Testing Manual Seed ===")
 
-    smollnet.manual_seed(2025)
-    first = smollnet.rand(2, 3, device=smollnet.Device.CPU)
-    second = smollnet.rand(2, 3, device=smollnet.Device.CPU)
+    reference = smollnet.zeros(2, 3, device=smollnet.Device.CPU)
 
     smollnet.manual_seed(2025)
-    first_replay = smollnet.rand(2, 3, device=smollnet.Device.CPU)
-    second_replay = smollnet.rand(2, 3, device=smollnet.Device.CPU)
+    first = smollnet.rand_like(reference)
+    second = smollnet.rand_like(reference)
+
+    smollnet.manual_seed(2025)
+    first_replay = smollnet.rand_like(reference)
+    second_replay = smollnet.rand_like(reference)
 
     assert repr(first) == repr(first_replay)
     assert repr(second) == repr(second_replay)
 
     smollnet.manual_seed(2026)
-    different_seed = smollnet.rand(2, 3, device=smollnet.Device.CPU)
+    different_seed = smollnet.rand_like(reference)
 
     assert repr(first) != repr(different_seed)
 
