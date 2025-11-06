@@ -3,6 +3,7 @@ find_package(CUDAToolkit REQUIRED)
 add_library(${CUDA_LIBNAME}
   STATIC
     src/kernels.cu
+    src/operators.cu
     src/sum.cu
     src/welford.cu
     src/prng.cu
