@@ -73,6 +73,28 @@ def test_tensor_creation():
 
     print("✓ Tensor creation tests passed!\n")
 
+def test_manual_seed():
+    """Test that manual_seed changes and resets CPU random state."""
+    print("=== Testing Manual Seed ===")
+
+    smollnet.manual_seed(2025)
+    first = smollnet.rand(2, 3, device=smollnet.Device.CPU)
+    second = smollnet.rand(2, 3, device=smollnet.Device.CPU)
+
+    smollnet.manual_seed(2025)
+    first_replay = smollnet.rand(2, 3, device=smollnet.Device.CPU)
+    second_replay = smollnet.rand(2, 3, device=smollnet.Device.CPU)
+
+    assert repr(first) == repr(first_replay)
+    assert repr(second) == repr(second_replay)
+
+    smollnet.manual_seed(2026)
+    different_seed = smollnet.rand(2, 3, device=smollnet.Device.CPU)
+
+    assert repr(first) != repr(different_seed)
+
+    print("✓ Manual seed tests passed!\n")
+
 def test_tensor_operations():
     """Test basic tensor operations."""
     print("=== Testing Tensor Operations ===")
@@ -333,6 +355,7 @@ def main():
 
     try:
         test_tensor_creation()
+        test_manual_seed()
         test_tensor_operations()
         test_activation_functions()
         test_neural_network_layers()

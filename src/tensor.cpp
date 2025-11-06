@@ -18,6 +18,7 @@ namespace smollnet {
 namespace {
 
 std::mt19937 &cpu_random_generator() {
+  // NOLINTNEXTLINE
   static std::mt19937 generator(1234U);
   return generator;
 }
