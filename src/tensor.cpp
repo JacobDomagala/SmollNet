@@ -34,6 +34,17 @@ void SetupAutograd(const Tensor &n, const Tensor &other) {
   }
 }
 
+Tensor full_like(const Tensor &t, float value) {
+  Tensor out = empty(t.dims().data(), t.ndims(), t.dtype(), t.device());
+  if (t.device() == Device::CUDA) {
+    launch_fill(static_cast<float *>(out.data()), out.numel(), value);
+  } else {
+    std::fill_n(static_cast<float *>(out.data()), out.numel(), value);
+  }
+
+  return out;
+}
+
 /*
   STORAGE
 */
@@ -212,9 +223,13 @@ size_t Tensor::total_bytes() const noexcept {
   return element_size(dtype()) * numel();
 }
 
+Tensor Tensor::neg() const { return full_like(*this, 0.0f).sub(*this); }
+
 Tensor Tensor::sum(int64_t dim, bool keep_dim) const {
   return ::smollnet::sum(*this, dim, keep_dim);
 }
+
+Tensor Tensor::add(float scalar) const { return add(full_like(*this, scalar)); }
 
 Tensor Tensor::mul(const Tensor &other) const {
   std::array<int64_t, 3> out_sz = {0, 0, 0};
@@ -268,6 +283,8 @@ Tensor Tensor::mul(const Tensor &other) const {
   SetupAutograd<MulFunction>(*this, other, out);
   return out;
 }
+
+Tensor Tensor::mul(float scalar) const { return mul(full_like(*this, scalar)); }
 
 Tensor Tensor::matmul(const Tensor &other) const {
   return ::smollnet::matmul(*this, other);
@@ -376,6 +393,70 @@ Tensor Tensor::sub(const Tensor &other) const {
 
   SetupAutograd<SubFunction>(*this, other, out);
   return out;
+}
+
+Tensor Tensor::sub(float scalar) const { return sub(full_like(*this, scalar)); }
+
+Tensor Tensor::rsub(float scalar) const {
+  return full_like(*this, scalar).sub(*this);
+}
+
+Tensor Tensor::div(const Tensor &other) const {
+  std::array<int64_t, 3> out_sz = {0, 0, 0};
+  bool expand_me = false;
+  bool expand_other = false;
+
+  int64_t out_rank = 0;
+  for (int i = 0; i < 3; ++i) {
+    const auto my_size = size(i);
+    const auto other_size = other.size(i);
+    ASSERT(my_size == other_size or (my_size == 1 or my_size == 0) or
+               (other_size == 1 or other_size == 0),
+           fmt::format("Unable to divide non-broadcastable Tensors! [{},{},{}] "
+                       "and [{},{},{}]",
+                       size(0), size(1), size(2), other.size(0), other.size(1),
+                       other.size(2)));
+
+    out_sz[i] = std::max(impl()->sizes[i], other.impl()->sizes[i]);
+
+    if (out_sz[i] > 0) {
+      out_rank++;
+    }
+
+    expand_me |= out_sz[i] != my_size;
+    expand_other |= out_sz[i] != other_size;
+  }
+
+  auto me_alias = expand_me ? expand(out_sz) : *this;
+  auto other_alias = expand_other ? other.expand(out_sz) : other;
+
+  Tensor out = empty(out_sz.data(), out_rank, dtype(), device(),
+                     requires_grad() || other.requires_grad());
+
+  if (!expand_me and !expand_other) {
+    launch_div(static_cast<float *>(out.data()), static_cast<float *>(data()),
+               static_cast<float *>(other.data()), out.numel());
+  } else {
+    StrideInfo s{};
+    s.rank = out_rank;
+    for (int i = 0; i < s.rank; ++i) {
+      s.output_size[i] = out_sz[i];
+      s.a_stride[i] = me_alias.impl()->strides[i];
+      s.b_stride[i] = other_alias.impl()->strides[i];
+    }
+
+    launch_div_strided(out.data(), me_alias.data(), other_alias.data(), s,
+                       out.numel());
+  }
+
+  SetupAutograd<DivFunction>(*this, other, out);
+  return out;
+}
+
+Tensor Tensor::div(float scalar) const { return div(full_like(*this, scalar)); }
+
+Tensor Tensor::rdiv(float scalar) const {
+  return full_like(*this, scalar).div(*this);
 }
 
 Tensor Tensor::transpose(int d0, int d1) const {
@@ -653,7 +734,15 @@ Tensor sum(const Tensor &t, int64_t dim, bool keep_dim) {
   return new_tensor;
 }
 
+Tensor neg(const Tensor &t) { return t.neg(); }
+
+Tensor add(const Tensor &left, const Tensor &right) { return left.add(right); }
+
+Tensor sub(const Tensor &left, const Tensor &right) { return left.sub(right); }
+
 Tensor mul(const Tensor &left, const Tensor &right) { return left.mul(right); }
+
+Tensor div(const Tensor &left, const Tensor &right) { return left.div(right); }
 
 Tensor mse(const Tensor &pred, const Tensor &target) {
   ASSERT(pred.dims() == target.dims(), "");
@@ -668,9 +757,29 @@ Tensor mse(const Tensor &pred, const Tensor &target) {
 
 Tensor operator+(const Tensor &l, const Tensor &r) { return l.add(r); }
 
+Tensor operator-(const Tensor &t) { return t.neg(); }
+
 Tensor operator-(const Tensor &l, const Tensor &r) { return l.sub(r); }
 
 Tensor operator*(const Tensor &l, const Tensor &r) { return l.mul(r); }
+
+Tensor operator/(const Tensor &l, const Tensor &r) { return l.div(r); }
+
+Tensor operator+(const Tensor &l, float scalar) { return l.add(scalar); }
+
+Tensor operator+(float scalar, const Tensor &r) { return r.add(scalar); }
+
+Tensor operator-(const Tensor &l, float scalar) { return l.sub(scalar); }
+
+Tensor operator-(float scalar, const Tensor &r) { return r.rsub(scalar); }
+
+Tensor operator*(const Tensor &l, float scalar) { return l.mul(scalar); }
+
+Tensor operator*(float scalar, const Tensor &r) { return r.mul(scalar); }
+
+Tensor operator/(const Tensor &l, float scalar) { return l.div(scalar); }
+
+Tensor operator/(float scalar, const Tensor &r) { return r.rdiv(scalar); }
 
 Tensor &operator+=(Tensor &l, const Tensor &r) {
   l = l + r;
@@ -684,6 +793,31 @@ Tensor &operator-=(Tensor &l, const Tensor &r) {
 
 Tensor &operator*=(Tensor &l, const Tensor &r) {
   l = l * r;
+  return l;
+}
+
+Tensor &operator/=(Tensor &l, const Tensor &r) {
+  l = l / r;
+  return l;
+}
+
+Tensor &operator+=(Tensor &l, float scalar) {
+  l = l + scalar;
+  return l;
+}
+
+Tensor &operator-=(Tensor &l, float scalar) {
+  l = l - scalar;
+  return l;
+}
+
+Tensor &operator*=(Tensor &l, float scalar) {
+  l = l * scalar;
+  return l;
+}
+
+Tensor &operator/=(Tensor &l, float scalar) {
+  l = l / scalar;
   return l;
 }
 

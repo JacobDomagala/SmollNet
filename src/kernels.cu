@@ -77,20 +77,32 @@ __global__ void add_strided_kernel(float *__restrict__ out,
 
   // Decode linear index -> (i,j,k)
   int dims[3] = {0, 0, 0};
-  compute_dimensions(dims, idx, s);
 
-  int64_t offA = dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] +
-                 dims[2] * s.a_stride[2];
-  int64_t offB = dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] +
-                 dims[2] * s.b_stride[2];
+  size_t stride = blockDim.x * gridDim.x;
 
-  out[idx] = a[offA] + b[offB];
+  StrideInfo s_local = s;
+
+  for (size_t tid = idx; tid < total; tid += stride) {
+    compute_dimensions(dims, tid, s_local);
+    int64_t offA = dims[0] * s_local.a_stride[0] +
+                   dims[1] * s_local.a_stride[1] +
+                   dims[2] * s_local.a_stride[2];
+    int64_t offB = dims[0] * s_local.b_stride[0] +
+                   dims[1] * s_local.b_stride[1] +
+                   dims[2] * s_local.b_stride[2];
+
+    out[tid] = a[offA] + b[offB];
+  }
 }
 
 void launch_add_strided(void *dst, void *a, void *b, const StrideInfo &s,
                         size_t total) {
   dim3 blk(256);
-  dim3 grd((total + blk.x - 1) / blk.x);
+  size_t grid_x = (total / 32 + blk.x - 1) / blk.x;
+  if (grid_x == 0) {
+    grid_x = 1;
+  }
+  dim3 grd(grid_x);
 
   add_strided_kernel<<<grd, blk>>>(static_cast<float *>(dst),
                                    static_cast<const float *>(a),
@@ -189,6 +201,51 @@ void launch_sub_strided(void *out, void *a, void *b, const StrideInfo &s,
   sub_strided_kernel<<<grid, block>>>(static_cast<float *>(out),
                                       static_cast<float *>(a),
                                       static_cast<float *>(b), s, total);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+template <typename T>
+__global__ void div_kernel(T *out, T *left, T *right, size_t n) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < n)
+    out[idx] = left[idx] / right[idx];
+}
+
+void launch_div(float *out, float *a, float *b, size_t numElems) {
+  dim3 block(256);
+  dim3 grid((numElems + block.x - 1) / block.x);
+  div_kernel<<<grid, block>>>(out, a, b, numElems);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void div_strided_kernel(float *__restrict__ out,
+                                   const float *__restrict__ a,
+                                   const float *__restrict__ b, StrideInfo s,
+                                   size_t total) {
+  size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= total)
+    return;
+
+  int dims[3] = {0, 0, 0};
+  compute_dimensions(dims, idx, s);
+
+  int64_t offA = dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] +
+                 dims[2] * s.a_stride[2];
+  int64_t offB = dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] +
+                 dims[2] * s.b_stride[2];
+
+  out[idx] = a[offA] / b[offB];
+}
+
+void launch_div_strided(void *dst, void *a, void *b, const StrideInfo &s,
+                        size_t total) {
+  dim3 blk(256);
+  dim3 grd((total + blk.x - 1) / blk.x);
+
+  div_strided_kernel<<<grd, blk>>>(static_cast<float *>(dst),
+                                   static_cast<const float *>(a),
+                                   static_cast<const float *>(b), s, total);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 __global__ void matmul_kernel(float *__restrict__ C,
@@ -420,10 +477,8 @@ void launch_sigmoid_grad(void *out, void *grad_out, void *in, size_t total) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-__global__ void mse_kernel(float *out,
-                           const float *__restrict__ pred,
-                           const float *__restrict__ target,
-                           std::size_t n) {
+__global__ void mse_kernel(float *out, const float *__restrict__ pred,
+                           const float *__restrict__ target, std::size_t n) {
   __shared__ float sMem[32];
 
   std::size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -471,9 +526,9 @@ void launch_mse(void *out, void *pred, void *target, size_t total) {
   constexpr int BLOCK_SIZE = 256;
   int grid = (total + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-  mse_kernel<<<grid, BLOCK_SIZE>>>(
-      static_cast<float *>(out), static_cast<float *>(pred),
-      static_cast<float *>(target), total);
+  mse_kernel<<<grid, BLOCK_SIZE>>>(static_cast<float *>(out),
+                                   static_cast<float *>(pred),
+                                   static_cast<float *>(target), total);
 
   CHECK_CUDA(cudaGetLastError());
 }
