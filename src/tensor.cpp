@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <iterator>
 #include <random>
+#include <string>
 
 #include <cuda_runtime.h>
 
@@ -21,6 +23,214 @@ std::mt19937 &cpu_random_generator() {
   // NOLINTNEXTLINE
   static std::mt19937 generator(1234U);
   return generator;
+}
+
+std::string shape_to_string(const TensorShape &shape, int64_t rank) {
+  return fmt::format("[{}]",
+                     fmt::join(shape.begin(), shape.begin() + rank, ", "));
+}
+
+int64_t infer_rank(const TensorShape &shape) {
+  int64_t rank = 0;
+  for (size_t dim = 0; dim < shape.size(); ++dim) {
+    if (shape[dim] != 0) {
+      rank = static_cast<int64_t>(dim + 1);
+    }
+  }
+  return rank;
+}
+
+bool is_dense_contiguous(const Tensor &t) {
+  int64_t expected_stride = 1;
+  for (int64_t dim = t.ndims() - 1; dim >= 0; --dim) {
+    if (t.strides()[dim] != expected_stride) {
+      return false;
+    }
+    expected_stride *= t.size(dim);
+  }
+  return true;
+}
+
+Tensor make_broadcast_view(const Tensor &input, const TensorShape &out_shape,
+                           int64_t out_rank) {
+  ASSERT(out_rank >= input.ndims(),
+         fmt::format("Cannot broadcast tensor rank {} to rank {}",
+                     input.ndims(), out_rank));
+
+  TensorShape sizes{};
+  TensorShape strides{};
+  size_t elems = 1;
+  bool changed = input.ndims() != out_rank;
+  const int64_t rank_offset = out_rank - input.ndims();
+
+  for (int64_t dim = 0; dim < out_rank; ++dim) {
+    const int64_t input_dim = dim - rank_offset;
+    const int64_t old_size = input_dim >= 0 ? input.size(input_dim) : 1;
+    const int64_t old_stride =
+        input_dim >= 0 ? input.strides()[input_dim] : 0;
+
+    ASSERT(old_size == out_shape[dim] || old_size == 1,
+           fmt::format("Cannot broadcast shape {} to {}",
+                       shape_to_string(input.dims(), input.ndims()),
+                       shape_to_string(out_shape, out_rank)));
+
+    sizes[dim] = out_shape[dim];
+    strides[dim] = old_size == out_shape[dim] ? old_stride : 0;
+    elems *= static_cast<size_t>(sizes[dim]);
+    changed |= input_dim != dim || old_size != out_shape[dim] ||
+               old_stride != strides[dim];
+  }
+
+  if (!changed) {
+    return input;
+  }
+
+  auto view = std::make_shared<TensorImpl>(*input.impl());
+  view->sizes = sizes;
+  view->strides = strides;
+  view->ndim = out_rank;
+  view->elems = elems;
+  view->expanded = true;
+  return Tensor(view);
+}
+
+TensorShape broadcast_shape(const Tensor &lhs, const Tensor &rhs,
+                            const char *op_name) {
+  TensorShape out_shape{};
+  const int64_t out_rank = std::max(lhs.ndims(), rhs.ndims());
+  const int64_t lhs_offset = out_rank - lhs.ndims();
+  const int64_t rhs_offset = out_rank - rhs.ndims();
+
+  for (int64_t dim = 0; dim < out_rank; ++dim) {
+    const int64_t lhs_dim = dim - lhs_offset;
+    const int64_t rhs_dim = dim - rhs_offset;
+    const int64_t lhs_size = lhs_dim >= 0 ? lhs.size(lhs_dim) : 1;
+    const int64_t rhs_size = rhs_dim >= 0 ? rhs.size(rhs_dim) : 1;
+
+    ASSERT(lhs_size == rhs_size || lhs_size == 1 || rhs_size == 1,
+           fmt::format("Unable to {} non-broadcastable Tensors! {} and {}",
+                       op_name, shape_to_string(lhs.dims(), lhs.ndims()),
+                       shape_to_string(rhs.dims(), rhs.ndims())));
+
+    out_shape[dim] = std::max(lhs_size, rhs_size);
+  }
+
+  return out_shape;
+}
+
+using ContiguousBinaryLaunch = void (*)(float *, float *, float *, size_t);
+using StridedBinaryLaunch = void (*)(void *, void *, void *, const StrideInfo &,
+                                     size_t);
+using CpuBinaryOp = float (*)(float, float);
+
+float add_values(float lhs, float rhs) { return lhs + rhs; }
+float sub_values(float lhs, float rhs) { return lhs - rhs; }
+float mul_values(float lhs, float rhs) { return lhs * rhs; }
+float div_values(float lhs, float rhs) { return lhs / rhs; }
+
+void compute_binary_offsets(size_t idx, const TensorShape &shape,
+                            const TensorShape &lhs_strides,
+                            const TensorShape &rhs_strides, int64_t rank,
+                            int64_t &lhs_offset, int64_t &rhs_offset) {
+  lhs_offset = 0;
+  rhs_offset = 0;
+
+  for (int64_t dim = rank - 1; dim >= 0; --dim) {
+    const int64_t coord = idx % shape[dim];
+    idx /= shape[dim];
+    lhs_offset += coord * lhs_strides[dim];
+    rhs_offset += coord * rhs_strides[dim];
+  }
+}
+
+void copy_shape_to_kernel_array(const TensorShape &shape, int64_t *out,
+                                int64_t rank) {
+  for (int64_t dim = 0; dim < rank; ++dim) {
+    out[dim] = shape[dim];
+  }
+}
+
+Tensor binary_tensor_op(const Tensor &lhs, const Tensor &rhs,
+                        const char *op_name,
+                        CpuBinaryOp cpu_op,
+                        ContiguousBinaryLaunch launch_contiguous,
+                        StridedBinaryLaunch launch_strided) {
+  ASSERT(lhs.device() == rhs.device(),
+         fmt::format("Device mismatch! {} and {}", get_device_name(lhs.device()),
+                     get_device_name(rhs.device())));
+  ASSERT(lhs.dtype() == rhs.dtype(),
+         fmt::format("DType mismatch! {} and {}", get_name(lhs.dtype()),
+                     get_name(rhs.dtype())));
+
+  const int64_t out_rank = std::max(lhs.ndims(), rhs.ndims());
+  TensorShape out_shape = broadcast_shape(lhs, rhs, op_name);
+
+  Tensor lhs_view = make_broadcast_view(lhs, out_shape, out_rank);
+  Tensor rhs_view = make_broadcast_view(rhs, out_shape, out_rank);
+
+  Tensor out = empty(out_shape.data(), out_rank, lhs.dtype(), lhs.device(),
+                     lhs.requires_grad() || rhs.requires_grad());
+
+  if (lhs.device() == Device::CPU) {
+    const auto *lhs_data = static_cast<const float *>(lhs_view.data());
+    const auto *rhs_data = static_cast<const float *>(rhs_view.data());
+    auto *out_data = static_cast<float *>(out.data());
+
+    for (size_t idx = 0; idx < out.numel(); ++idx) {
+      int64_t lhs_offset = 0;
+      int64_t rhs_offset = 0;
+      compute_binary_offsets(idx, out_shape, lhs_view.strides(),
+                             rhs_view.strides(), out_rank, lhs_offset,
+                             rhs_offset);
+      out_data[idx] = cpu_op(lhs_data[lhs_offset], rhs_data[rhs_offset]);
+    }
+    return out;
+  }
+
+  if (is_dense_contiguous(lhs_view) && is_dense_contiguous(rhs_view)) {
+    launch_contiguous(static_cast<float *>(out.data()),
+                      static_cast<float *>(lhs_view.data()),
+                      static_cast<float *>(rhs_view.data()), out.numel());
+    return out;
+  }
+
+  StrideInfo stride_info{};
+  stride_info.rank = out_rank;
+  for (int64_t dim = 0; dim < out_rank; ++dim) {
+    stride_info.output_size[dim] = out_shape[dim];
+    stride_info.a_stride[dim] = lhs_view.strides()[dim];
+    stride_info.b_stride[dim] = rhs_view.strides()[dim];
+  }
+
+  launch_strided(out.data(), lhs_view.data(), rhs_view.data(), stride_info,
+                 out.numel());
+  return out;
+}
+
+void append_tensor_values(fmt::memory_buffer &out, const float *data,
+                          const TensorShape &sizes,
+                          const TensorShape &strides, int64_t rank,
+                          int64_t dim, int64_t offset) {
+  if (rank == 0) {
+    fmt::format_to(std::back_inserter(out), "{:.4f}", data[offset]);
+    return;
+  }
+
+  fmt::format_to(std::back_inserter(out), "[");
+  for (int64_t i = 0; i < sizes[dim]; ++i) {
+    const int64_t next_offset = offset + i * strides[dim];
+    if (dim == rank - 1) {
+      fmt::format_to(std::back_inserter(out), "{:.4f}", data[next_offset]);
+    } else {
+      append_tensor_values(out, data, sizes, strides, rank, dim + 1,
+                           next_offset);
+    }
+
+    if (i != sizes[dim] - 1) {
+      fmt::format_to(std::back_inserter(out), ", ");
+    }
+  }
+  fmt::format_to(std::back_inserter(out), "]");
 }
 
 } // namespace
@@ -74,6 +284,10 @@ Storage::~Storage() {
 */
 
 TensorImpl::TensorImpl(const int64_t *dims, int64_t rank, DataType type) {
+  ASSERT(rank <= static_cast<int64_t>(kMaxTensorDims),
+         fmt::format("Tensor rank {} exceeds max rank {}", rank,
+                     kMaxTensorDims));
+
   for (size_t d = 0; d < rank; ++d) {
     sizes[d] = dims[d];
     elems *= dims[d];
@@ -141,13 +355,9 @@ void *Tensor::data() const noexcept {
 
 size_t Tensor::numel() const noexcept { return impl_->elems; }
 
-const std::array<int64_t, 3> &Tensor::dims() const noexcept {
-  return impl_->sizes;
-}
+const TensorShape &Tensor::dims() const noexcept { return impl_->sizes; }
 
-const std::array<int64_t, 3> &Tensor::strides() const noexcept {
-  return impl_->strides;
-}
+const TensorShape &Tensor::strides() const noexcept { return impl_->strides; }
 
 void Tensor::print() const {
   if (!initialized()) {
@@ -155,13 +365,14 @@ void Tensor::print() const {
   } else {
     auto &t = *impl();
     fmt::print(
-        "Tensor: [Refcount: {} addr: {} Rank: {} dim({}, {}, {}) "
-        "strides({}, {}, {}) "
+        "Tensor: [Refcount: {} addr: {} Rank: {} dim({}) "
+        "strides({}) "
         "dtype:{} requires_grad:{}]\n\t Storage [Refcount: {} addr: {}]\n",
-        impl_.use_count(), fmt::ptr(impl_.get()), t.ndim, t.sizes[0],
-        t.sizes[1], t.sizes[2], t.strides[0], t.strides[1], t.strides[2],
-        get_name(t.dtype), requires_grad(), t.storage.use_count(),
-        t.storage->ptr);
+        impl_.use_count(), fmt::ptr(impl_.get()), t.ndim,
+        fmt::join(t.sizes.begin(), t.sizes.begin() + t.ndim, ", "),
+        fmt::join(t.strides.begin(), t.strides.begin() + t.ndim, ", "),
+        get_name(t.dtype),
+        requires_grad(), t.storage.use_count(), t.storage->ptr);
   }
 }
 
@@ -173,9 +384,6 @@ std::string Tensor::to_string() const {
     return "[]";
   }
 
-  ASSERT(ndims() <= 3,
-         fmt::format("Tensor::print_elms unsupported ndims=={}", ndims()));
-
   // Could be expensive
   auto t = cpu();
   const float *raw_data = static_cast<const float *>(t.data());
@@ -185,48 +393,9 @@ std::string Tensor::to_string() const {
 
   fmt::memory_buffer out;
 
-  if (ndims() == 1) {
-    fmt::format_to(std::back_inserter(out), "Tensor: ([");
-    for (int64_t i = 0; i < sizes[0]; ++i) {
-      fmt::format_to(std::back_inserter(out), "{:.4f}{}",
-                     raw_data[i * stride[0]], i == sizes[0] - 1 ? "" : ",  ");
-    }
-    fmt::format_to(std::back_inserter(out), "])\n");
-  } else if (ndims() == 2) {
-    fmt::format_to(std::back_inserter(out), "Tensor: ([");
-    for (int64_t i = 0; i < sizes[0]; ++i) {
-      fmt::format_to(std::back_inserter(out), "[");
-      for (int64_t j = 0; j < sizes[1]; ++j) {
-        fmt::format_to(std::back_inserter(out), "{:.4f}{}",
-                       raw_data[i * stride[0] + j * stride[1]],
-                       j == sizes[1] - 1 ? "" : ",  ");
-      }
-      fmt::format_to(std::back_inserter(out), "{}",
-                     i == sizes[0] - 1 ? "]" : "],\n          ");
-    }
-    fmt::format_to(std::back_inserter(out), "])\n");
-  } else if (ndims() == 3) {
-    fmt::format_to(std::back_inserter(out), "Tensor: ([");
-    for (int64_t i = 0; i < sizes[0]; ++i) {
-      fmt::format_to(std::back_inserter(out), "[");
-      for (int64_t j = 0; j < sizes[1]; ++j) {
-        fmt::format_to(std::back_inserter(out), "[");
-        for (int64_t k = 0; k < sizes[2]; ++k) {
-          fmt::format_to(
-              std::back_inserter(out), "{:.4f}{}",
-              raw_data[k * stride[2] + j * stride[1] + i * stride[0]],
-              k == sizes[2] - 1 ? "" : ",  ");
-        }
-        fmt::format_to(std::back_inserter(out), "{}",
-                       j == sizes[1] - 1 ? "]" : "],\n           ");
-      }
-      fmt::format_to(std::back_inserter(out), "{}",
-                     i == sizes[0] - 1 ? "]" : "],\n\n          ");
-    }
-    fmt::format_to(std::back_inserter(out), "])\n");
-  }
-
-  fmt::format_to(std::back_inserter(out), "])\n");
+  fmt::format_to(std::back_inserter(out), "Tensor: (");
+  append_tensor_values(out, raw_data, sizes, stride, ndims(), 0, 0);
+  fmt::format_to(std::back_inserter(out), ")\n");
 
   return fmt::to_string(out);
 }
@@ -244,53 +413,9 @@ Tensor Tensor::sum(int64_t dim, bool keep_dim) const {
 Tensor Tensor::add(float scalar) const { return add(full_like(*this, scalar)); }
 
 Tensor Tensor::mul(const Tensor &other) const {
-  std::array<int64_t, 3> out_sz = {0, 0, 0};
-  bool expand_me = false;
-  bool expand_other = false;
-
-  int64_t out_rank = 0;
-  for (int i = 0; i < 3; ++i) {
-    const auto my_size = size(i);
-    const auto other_size = other.size(i);
-    ASSERT(
-        my_size == other_size or (my_size == 1 or my_size == 0) or
-            (other_size == 1 or other_size == 0),
-        fmt::format("Unable to multiply non-broadcastable Tensors! [{},{},{}] "
-                    "and [{},{},{}]",
-                    size(0), size(1), size(2), other.size(0), other.size(1),
-                    other.size(2)));
-
-    out_sz[i] = std::max(impl()->sizes[i], other.impl()->sizes[i]);
-
-    if (out_sz[i] > 0) {
-      out_rank++;
-    }
-
-    expand_me |= out_sz[i] != my_size;
-    expand_other |= out_sz[i] != other_size;
-  }
-
-  auto me_alias = expand_me ? expand(out_sz) : *this;
-  auto other_alias = expand_other ? other.expand(out_sz) : other;
-
-  Tensor out = empty(out_sz.data(), out_rank, dtype(), device(),
-                     requires_grad() || other.requires_grad());
-
-  if (!expand_me and !expand_other) {
-    launch_mul(static_cast<float *>(out.data()), static_cast<float *>(data()),
-               static_cast<float *>(other.data()), out.numel());
-  } else {
-    StrideInfo s{};
-    s.rank = out_rank;
-    for (int i = 0; i < s.rank; ++i) {
-      s.output_size[i] = out_sz[i];
-      s.a_stride[i] = me_alias.impl()->strides[i];
-      s.b_stride[i] = other_alias.impl()->strides[i];
-    }
-
-    launch_mul_strided(out.data(), me_alias.data(), other_alias.data(), s,
-                       out.numel());
-  }
+  Tensor out =
+      binary_tensor_op(*this, other, "multiply", mul_values, launch_mul,
+                       launch_mul_strided);
 
   SetupAutograd<MulFunction>(*this, other, out);
   return out;
@@ -303,105 +428,18 @@ Tensor Tensor::matmul(const Tensor &other) const {
 }
 
 Tensor Tensor::add(const Tensor &other) const {
-
-  std::array<int64_t, 3> out_sz = {0, 0, 0};
-  bool expand_me = false;
-  bool expand_other = false;
-
-  int64_t out_rank = 0;
-  for (int i = 0; i < 3; ++i) {
-    const auto my_size = size(i);
-    const auto other_size = other.size(i);
-    ASSERT(my_size == other_size or (my_size == 1 or my_size == 0) or
-               (other_size == 1 or other_size == 0),
-           fmt::format("Unable to add non-broadcastable Tensors! [{},{},{}] "
-                       "and [{},{},{}]",
-                       size(0), size(1), size(2), other.size(0), other.size(1),
-                       other.size(2)));
-
-    out_sz[i] = std::max(impl()->sizes[i], other.impl()->sizes[i]);
-
-    if (out_sz[i] > 0) {
-      out_rank++;
-    }
-
-    expand_me |= out_sz[i] != my_size;
-    expand_other |= out_sz[i] != other_size;
-  }
-
-  auto me_alias = expand_me ? expand(out_sz) : *this;
-  auto other_alias = expand_other ? other.expand(out_sz) : other;
-
-  Tensor out = empty(out_sz.data(), out_rank, dtype(), device(),
-                     requires_grad() || other.requires_grad());
-
-  if (!expand_me and !expand_other) {
-    launch_add(static_cast<float *>(out.data()), static_cast<float *>(data()),
-               static_cast<float *>(other.data()), out.numel());
-  } else {
-    StrideInfo s{};
-    s.rank = out_rank;
-    for (int i = 0; i < s.rank; ++i) {
-      s.output_size[i] = out_sz[i];
-      s.a_stride[i] = me_alias.impl()->strides[i];
-      s.b_stride[i] = other_alias.impl()->strides[i];
-    }
-
-    launch_add_strided(out.data(), me_alias.data(), other_alias.data(), s,
-                       out.numel());
-  }
+  Tensor out =
+      binary_tensor_op(*this, other, "add", add_values, launch_add,
+                       launch_add_strided);
 
   SetupAutograd<AddFunction>(*this, other, out);
   return out;
 }
 
 Tensor Tensor::sub(const Tensor &other) const {
-  std::array<int64_t, 3> out_sz = {0, 0, 0};
-  bool expand_me = false;
-  bool expand_other = false;
-
-  int64_t out_rank = 0;
-  for (int i = 0; i < 3; ++i) {
-    const auto my_size = size(i);
-    const auto other_size = other.size(i);
-    ASSERT(my_size == other_size or (my_size == 1 or my_size == 0) or
-               (other_size == 1 or other_size == 0),
-           fmt::format("Unable to add non-broadcastable Tensors! [{},{},{}] "
-                       "and [{},{},{}]",
-                       size(0), size(1), size(2), other.size(0), other.size(1),
-                       other.size(2)));
-
-    out_sz[i] = std::max(impl()->sizes[i], other.impl()->sizes[i]);
-
-    if (out_sz[i] > 0) {
-      out_rank++;
-    }
-
-    expand_me |= out_sz[i] != my_size;
-    expand_other |= out_sz[i] != other_size;
-  }
-
-  auto me_alias = expand_me ? expand(out_sz) : *this;
-  auto other_alias = expand_other ? other.expand(out_sz) : other;
-
-  Tensor out = empty(out_sz.data(), out_rank, dtype(), device(),
-                     requires_grad() || other.requires_grad());
-
-  if (!expand_me and !expand_other) {
-    launch_sub(static_cast<float *>(out.data()), static_cast<float *>(data()),
-               static_cast<float *>(other.data()), out.numel());
-  } else {
-    StrideInfo s{};
-    s.rank = out_rank;
-    for (int i = 0; i < s.rank; ++i) {
-      s.output_size[i] = out_sz[i];
-      s.a_stride[i] = me_alias.impl()->strides[i];
-      s.b_stride[i] = other_alias.impl()->strides[i];
-    }
-
-    launch_sub_strided(out.data(), me_alias.data(), other_alias.data(), s,
-                       out.numel());
-  }
+  Tensor out =
+      binary_tensor_op(*this, other, "subtract", sub_values, launch_sub,
+                       launch_sub_strided);
 
   SetupAutograd<SubFunction>(*this, other, out);
   return out;
@@ -414,52 +452,9 @@ Tensor Tensor::rsub(float scalar) const {
 }
 
 Tensor Tensor::div(const Tensor &other) const {
-  std::array<int64_t, 3> out_sz = {0, 0, 0};
-  bool expand_me = false;
-  bool expand_other = false;
-
-  int64_t out_rank = 0;
-  for (int i = 0; i < 3; ++i) {
-    const auto my_size = size(i);
-    const auto other_size = other.size(i);
-    ASSERT(my_size == other_size or (my_size == 1 or my_size == 0) or
-               (other_size == 1 or other_size == 0),
-           fmt::format("Unable to divide non-broadcastable Tensors! [{},{},{}] "
-                       "and [{},{},{}]",
-                       size(0), size(1), size(2), other.size(0), other.size(1),
-                       other.size(2)));
-
-    out_sz[i] = std::max(impl()->sizes[i], other.impl()->sizes[i]);
-
-    if (out_sz[i] > 0) {
-      out_rank++;
-    }
-
-    expand_me |= out_sz[i] != my_size;
-    expand_other |= out_sz[i] != other_size;
-  }
-
-  auto me_alias = expand_me ? expand(out_sz) : *this;
-  auto other_alias = expand_other ? other.expand(out_sz) : other;
-
-  Tensor out = empty(out_sz.data(), out_rank, dtype(), device(),
-                     requires_grad() || other.requires_grad());
-
-  if (!expand_me and !expand_other) {
-    launch_div(static_cast<float *>(out.data()), static_cast<float *>(data()),
-               static_cast<float *>(other.data()), out.numel());
-  } else {
-    StrideInfo s{};
-    s.rank = out_rank;
-    for (int i = 0; i < s.rank; ++i) {
-      s.output_size[i] = out_sz[i];
-      s.a_stride[i] = me_alias.impl()->strides[i];
-      s.b_stride[i] = other_alias.impl()->strides[i];
-    }
-
-    launch_div_strided(out.data(), me_alias.data(), other_alias.data(), s,
-                       out.numel());
-  }
+  Tensor out =
+      binary_tensor_op(*this, other, "divide", div_values, launch_div,
+                       launch_div_strided);
 
   SetupAutograd<DivFunction>(*this, other, out);
   return out;
@@ -491,45 +486,11 @@ Tensor Tensor::transpose(int d0, int d1) const {
   return return_tensor;
 }
 
-Tensor Tensor::expand(const std::array<int64_t, 3> &new_sz) const {
-  const auto &old = impl()->sizes;
-  const int64_t rank = impl()->ndim;
-
-  // check broadcast-compatibility and build new strides
-  std::array<int64_t, 3> ns = old;
-  std::array<int64_t, 3> st = impl()->strides;
-
-  size_t elems = 1;
-  for (int i = 0; i < rank; ++i) {
-    if (old[i] == new_sz[i]) {
-      ns[i] = new_sz[i];
-    } else {
-      ASSERT(old[i] == 1,
-             fmt::format("expand: non-broadcastable dim {}", old[i]));
-      ns[i] = new_sz[i];
-      st[i] = 0;
-    }
-
-    elems *= ns[i];
-  }
-
-  // make view
-  auto v = std::make_shared<TensorImpl>();
-  v->sizes = ns;
-  v->strides = st;
-  v->dtype = dtype();
-  v->ndim = rank;
-  v->elems = elems;
-  v->storage = impl()->storage;
-  v->requires_grad = requires_grad();
-  v->expanded = true;
-
-  // share autograd meta
-  if (impl()->grad) {
-    v->grad = impl()->grad;
-  }
-
-  return Tensor(v);
+Tensor Tensor::expand(const TensorShape &new_sz) const {
+  const int64_t new_rank = infer_rank(new_sz);
+  ASSERT(new_rank > 0 || ndims() == 0,
+         "expand requires at least one non-zero dimension");
+  return make_broadcast_view(*this, new_sz, new_rank);
 }
 
 Tensor Tensor::cuda() const {
@@ -725,22 +686,26 @@ Tensor sum(const Tensor &t, int64_t dim, bool keep_dim) {
   dims[2] = std::max(dims[2], 1l);
 
   StrideAndSize s_input;
-  s_input.size = dims;
-  s_input.stride = t.strides();
+  for (int64_t i = 0; i < t.ndims(); ++i) {
+    s_input.size[i] = dims[i];
+    s_input.stride[i] = t.strides()[i];
+  }
   s_input.rank = t.ndims();
 
   StrideAndSize s_output;
-  s_output.size = new_tensor.dims();
-  s_output.stride = new_tensor.strides();
+  for (int64_t i = 0; i < new_tensor.ndims(); ++i) {
+    s_output.size[i] = new_tensor.dims()[i];
+    s_output.stride[i] = new_tensor.strides()[i];
+  }
   s_output.rank = new_tensor.ndims();
 
   if (dim == 0) {
-    launch_sum_dim0(dst, srcp, s_input, s_output);
+    launch_sum_dim(dst, srcp, s_input, s_output, 0);
   } else if (dim == 1) {
-    launch_sum_dim1(dst, srcp, s_input, s_output);
+    launch_sum_dim(dst, srcp, s_input, s_output, 1);
   } else {
     // dim==2
-    launch_sum_dim2(dst, srcp, s_input, s_output);
+    launch_sum_dim(dst, srcp, s_input, s_output, 2);
   }
 
   return new_tensor;
@@ -835,6 +800,10 @@ Tensor &operator/=(Tensor &l, float scalar) {
 
 Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d,
              bool requires_grad) {
+  ASSERT(rank <= kMaxTensorDims,
+         fmt::format("Tensor rank {} exceeds max rank {}", rank,
+                     kMaxTensorDims));
+
   auto storage = std::make_shared<Storage>();
 
   float *ptr;
