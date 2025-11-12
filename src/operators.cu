@@ -5,23 +5,19 @@
 
 namespace smollnet {
 
-__device__ __forceinline__ void compute_dimensions(int (&dims)[3], size_t idx,
-                                                   const StrideInfo &s) {
+__device__ __forceinline__ void compute_strided_offsets(size_t idx,
+                                                        const StrideInfo &s,
+                                                        int64_t &offA,
+                                                        int64_t &offB) {
+  offA = 0;
+  offB = 0;
 
-  if (s.rank == 3) {
-    int64_t rest = s.output_size[1] * s.output_size[2];
-    dims[0] = idx / rest;
-    int64_t rem = idx % rest;
-    dims[1] = rem / s.output_size[2];
-    dims[2] = rem % s.output_size[2];
-  } else if (s.rank == 2) {
-    dims[0] = idx / s.output_size[1];
-    dims[1] = idx % s.output_size[1];
-    dims[2] = 0;
-  } else { // rank == 1
-    dims[0] = idx;
-    dims[1] = 0;
-    dims[2] = 0;
+  for (int64_t dim = s.rank - 1; dim >= 0; --dim) {
+    const int64_t coord = idx % s.output_size[dim];
+    idx /= s.output_size[dim];
+
+    offA += coord * s.a_stride[dim];
+    offB += coord * s.b_stride[dim];
   }
 }
 
@@ -73,13 +69,9 @@ __global__ void add_strided_kernel(float *__restrict__ out,
   if (idx >= total)
     return;
 
-  int dims[3] = {0, 0, 0};
-  compute_dimensions(dims, idx, s);
-
-  int64_t offA = dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] +
-                 dims[2] * s.a_stride[2];
-  int64_t offB = dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] +
-                 dims[2] * s.b_stride[2];
+  int64_t offA = 0;
+  int64_t offB = 0;
+  compute_strided_offsets(idx, s, offA, offB);
 
   out[idx] = a[offA] + b[offB];
 }
@@ -124,13 +116,9 @@ __global__ void mul_strided_kernel(float *__restrict__ out,
   if (idx >= total)
     return;
 
-  int dims[3] = {0, 0, 0};
-  compute_dimensions(dims, idx, s);
-
-  int64_t offA = dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] +
-                 dims[2] * s.a_stride[2];
-  int64_t offB = dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] +
-                 dims[2] * s.b_stride[2];
+  int64_t offA = 0;
+  int64_t offB = 0;
+  compute_strided_offsets(idx, s, offA, offB);
 
   out[idx] = a[offA] * b[offB];
 }
@@ -167,13 +155,9 @@ __global__ void sub_strided_kernel(float *out, float *a, float *b, StrideInfo s,
   if (idx >= total)
     return;
 
-  int dims[3] = {0, 0, 0};
-  compute_dimensions(dims, idx, s);
-
-  int64_t offA = dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] +
-                 dims[2] * s.a_stride[2];
-  int64_t offB = dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] +
-                 dims[2] * s.b_stride[2];
+  int64_t offA = 0;
+  int64_t offB = 0;
+  compute_strided_offsets(idx, s, offA, offB);
 
   out[idx] = a[offA] - b[offB];
 }
@@ -210,13 +194,9 @@ __global__ void div_strided_kernel(float *__restrict__ out,
   if (idx >= total)
     return;
 
-  int dims[3] = {0, 0, 0};
-  compute_dimensions(dims, idx, s);
-
-  int64_t offA = dims[0] * s.a_stride[0] + dims[1] * s.a_stride[1] +
-                 dims[2] * s.a_stride[2];
-  int64_t offB = dims[0] * s.b_stride[0] + dims[1] * s.b_stride[1] +
-                 dims[2] * s.b_stride[2];
+  int64_t offA = 0;
+  int64_t offB = 0;
+  compute_strided_offsets(idx, s, offA, offB);
 
   out[idx] = a[offA] / b[offB];
 }

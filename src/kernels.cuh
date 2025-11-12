@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "types.hpp"
+
 namespace smollnet {
 
 constexpr int32_t ROW_MAJOR = 0;
@@ -12,24 +14,24 @@ constexpr int32_t DEPTH_MAJOR = 2;
 
 
 struct StrideAndSize {
-  std::array<int64_t, 3> stride;
+  int64_t stride[kMaxTensorDims] = {};
 
   int64_t rank;
-  std::array<int64_t, 3> size;
+  int64_t size[kMaxTensorDims] = {};
 };
 
 struct StrideInfo {
   // size of the output operation
-  int64_t output_size[3];
+  int64_t output_size[kMaxTensorDims] = {};
 
-  int64_t a_stride[3];
-  int64_t b_stride[3];
+  int64_t a_stride[kMaxTensorDims] = {};
+  int64_t b_stride[kMaxTensorDims] = {};
   int64_t rank;
 };
 
 struct SizeInfo {
-  int64_t a_size[3];
-  int64_t b_size[3];
+  int64_t a_size[kMaxTensorDims] = {};
+  int64_t b_size[kMaxTensorDims] = {};
 };
 
 enum class WelfordType : uint8_t{
@@ -58,9 +60,8 @@ void launch_div(float *out, float *a, float *b, size_t numElems);
 void launch_div_strided(void *dst, void *a, void *b, const StrideInfo &s,
                         size_t total);
 
-void launch_sum_dim0(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output);
-void launch_sum_dim1(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output);
-void launch_sum_dim2(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output);
+void launch_sum_dim(void *out, void *in, const StrideAndSize &s_input,
+                    const StrideAndSize &s_output, int64_t dim);
 
 void launch_matmul(void *out, void *left, void *right,
                    const StrideInfo &strides, const SizeInfo &sizes,
