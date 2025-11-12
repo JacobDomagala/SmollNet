@@ -666,8 +666,13 @@ Tensor sum(const Tensor &t, int64_t dim, bool keep_dim) {
              "Tensor sum(tensor,dim,keep_dim): invalid dim={} t.ndims()={}",
              dim, t.ndims()));
 
+  ASSERT(dim >= 0,
+         fmt::format(
+             "Tensor sum(tensor,dim,keep_dim): invalid dim={} t.ndims()={}",
+             dim, t.ndims()));
+
   // build output shape
-  int64_t out_dims[3] = {0, 0, 0};
+  TensorShape out_dims{};
   for (int64_t i = 0, o = 0; i < t.ndims(); ++i) {
     if (i != dim) {
       out_dims[o++] = dims[i];
@@ -677,36 +682,23 @@ Tensor sum(const Tensor &t, int64_t dim, bool keep_dim) {
   }
 
   Tensor new_tensor =
-      zeros(out_dims, new_rank, data_type, device, t.requires_grad());
+      zeros(out_dims.data(), new_rank, data_type, device, t.requires_grad());
 
   auto *srcp = t.data();
   auto *dst = new_tensor.data();
-  dims[0] = std::max(dims[0], 1l);
-  dims[1] = std::max(dims[1], 1l);
-  dims[2] = std::max(dims[2], 1l);
 
-  StrideAndSize s_input;
-  for (int64_t i = 0; i < t.ndims(); ++i) {
-    s_input.size[i] = dims[i];
-    s_input.stride[i] = t.strides()[i];
-  }
+  StrideAndSize s_input{};
   s_input.rank = t.ndims();
+  copy_shape_to_kernel_array(dims, s_input.size, s_input.rank);
+  copy_shape_to_kernel_array(t.strides(), s_input.stride, s_input.rank);
 
-  StrideAndSize s_output;
-  for (int64_t i = 0; i < new_tensor.ndims(); ++i) {
-    s_output.size[i] = new_tensor.dims()[i];
-    s_output.stride[i] = new_tensor.strides()[i];
-  }
+  StrideAndSize s_output{};
   s_output.rank = new_tensor.ndims();
+  copy_shape_to_kernel_array(new_tensor.dims(), s_output.size, s_output.rank);
+  copy_shape_to_kernel_array(new_tensor.strides(), s_output.stride,
+                             s_output.rank);
 
-  if (dim == 0) {
-    launch_sum_dim(dst, srcp, s_input, s_output, 0);
-  } else if (dim == 1) {
-    launch_sum_dim(dst, srcp, s_input, s_output, 1);
-  } else {
-    // dim==2
-    launch_sum_dim(dst, srcp, s_input, s_output, 2);
-  }
+  launch_sum_dim(dst, srcp, s_input, s_output, dim);
 
   return new_tensor;
 }
