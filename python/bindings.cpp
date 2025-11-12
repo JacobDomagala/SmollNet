@@ -4,6 +4,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <algorithm>
+#include <stdexcept>
+
 using namespace pybind11::literals;
 namespace py = pybind11;
 
@@ -11,6 +14,20 @@ namespace py = pybind11;
 template <typename FuncType>
 void bind_tensor_creation_overloads(pybind11::module &m, const char *func_name,
                                     FuncType &&func) {
+  m.def(
+      func_name,
+      [func](const std::vector<int64_t> &dims,
+             smollnet::DataType dtype = smollnet::DataType::f32,
+             smollnet::Device device = smollnet::Device::CUDA,
+             bool requires_grad = false) {
+        if (dims.size() > smollnet::kMaxTensorDims) {
+          throw std::invalid_argument("Tensor rank exceeds kMaxTensorDims");
+        }
+        return func(dims.data(), dims.size(), dtype, device, requires_grad);
+      },
+      "dims"_a, "dtype"_a = smollnet::DataType::f32,
+      "device"_a = smollnet::Device::CUDA, "requires_grad"_a = false);
+
   // 1D version
   m.def(
       func_name,
@@ -55,6 +72,11 @@ void bind_tensor_creation_overloads(pybind11::module &m, const char *func_name,
 
 // Function objects for each tensor creation function
 struct RandFunctor {
+  auto operator()(const int64_t *dims, size_t rank, smollnet::DataType dtype,
+                  smollnet::Device device, bool requires_grad) const {
+    return smollnet::rand(dims, rank, dtype, device, requires_grad);
+  }
+
   template <size_t N>
   auto operator()(const int64_t (&dims)[N], smollnet::DataType dtype,
                   smollnet::Device device, bool requires_grad) const {
@@ -63,6 +85,11 @@ struct RandFunctor {
 };
 
 struct ZerosFunctor {
+  auto operator()(const int64_t *dims, size_t rank, smollnet::DataType dtype,
+                  smollnet::Device device, bool requires_grad) const {
+    return smollnet::zeros(dims, rank, dtype, device, requires_grad);
+  }
+
   template <size_t N>
   auto operator()(const int64_t (&dims)[N], smollnet::DataType dtype,
                   smollnet::Device device, bool requires_grad) const {
@@ -71,6 +98,11 @@ struct ZerosFunctor {
 };
 
 struct OnesFunctor {
+  auto operator()(const int64_t *dims, size_t rank, smollnet::DataType dtype,
+                  smollnet::Device device, bool requires_grad) const {
+    return smollnet::ones(dims, rank, dtype, device, requires_grad);
+  }
+
   template <size_t N>
   auto operator()(const int64_t (&dims)[N], smollnet::DataType dtype,
                   smollnet::Device device, bool requires_grad) const {
@@ -79,6 +111,11 @@ struct OnesFunctor {
 };
 
 struct EmptyFunctor {
+  auto operator()(const int64_t *dims, size_t rank, smollnet::DataType dtype,
+                  smollnet::Device device, bool requires_grad) const {
+    return smollnet::empty(dims, rank, dtype, device, requires_grad);
+  }
+
   template <size_t N>
   auto operator()(const int64_t (&dims)[N], smollnet::DataType dtype,
                   smollnet::Device device, bool requires_grad) const {
@@ -155,7 +192,15 @@ PYBIND11_MODULE(smollnet, m) {
       .def("matmul", &smollnet::Tensor::matmul)
 
       .def("transpose", &smollnet::Tensor::transpose)
-      .def("expand", &smollnet::Tensor::expand)
+      .def("expand",
+           [](const smollnet::Tensor &tensor, const std::vector<int64_t> &dims) {
+             if (dims.size() > smollnet::kMaxTensorDims) {
+               throw std::invalid_argument("Tensor rank exceeds kMaxTensorDims");
+             }
+             smollnet::TensorShape shape{};
+             std::copy(dims.begin(), dims.end(), shape.begin());
+             return tensor.expand(shape);
+           })
 
       .def("cuda", &smollnet::Tensor::cuda)
       .def("cpu", &smollnet::Tensor::cpu)
