@@ -2,9 +2,9 @@
 
 #include "types.hpp"
 
-#include <array>
 #include <cstddef>
 #include <memory>
+#include <string>
 
 namespace smollnet {
 
@@ -25,8 +25,8 @@ struct Storage {
 
 struct TensorImpl {
   std::shared_ptr<Storage> storage = nullptr;
-  std::array<int64_t, 3> sizes = {0, 0, 0};
-  std::array<int64_t, 3> strides = {0, 0, 0};
+  TensorShape sizes = {};
+  TensorShape strides = {};
 
   bool expanded = false;
   size_t elems = 1;
@@ -76,8 +76,8 @@ public:
   DataType dtype() const noexcept;
   void *data() const noexcept;
   size_t numel() const noexcept;
-  const std::array<int64_t, 3>& dims() const noexcept;
-  const std::array<int64_t, 3>& strides() const noexcept;
+  const TensorShape &dims() const noexcept;
+  const TensorShape &strides() const noexcept;
   void print() const;
   void print_elms() const;
   std::string to_string() const;
@@ -98,7 +98,7 @@ public:
   Tensor matmul(const Tensor&other) const;
 
   Tensor transpose(int d0, int d1) const;
-  Tensor expand(const std::array<int64_t, 3> &new_sz) const;
+  Tensor expand(const TensorShape &new_sz) const;
 
   Tensor cuda() const;
   Tensor cpu() const;
@@ -165,28 +165,32 @@ void manual_seed(unsigned long long seed);
 template <size_t N>
 Tensor empty(const int64_t (&dims)[N], DataType t, Device d,
              bool requires_grad = false) {
-  static_assert(N <= 3, "We don't support more than 3 dimensional Tensors");
+  static_assert(N <= kMaxTensorDims,
+                "We don't support more than kMaxTensorDims dimensional Tensors");
   return empty(dims, N, t, d, requires_grad);
 }
 
 template <size_t N>
 Tensor zeros(const int64_t (&dims)[N], DataType t, Device d,
              bool requires_grad = false) {
-  static_assert(N <= 3, "We don't support more than 3 dimensional Tensors");
+  static_assert(N <= kMaxTensorDims,
+                "We don't support more than kMaxTensorDims dimensional Tensors");
   return zeros(dims, N, t, d, requires_grad);
 }
 
 template <size_t N>
 Tensor ones(const int64_t (&dims)[N], DataType t, Device d,
             bool requires_grad = false) {
-  static_assert(N <= 3, "We don't support more than 3 dimensional Tensors");
+  static_assert(N <= kMaxTensorDims,
+                "We don't support more than kMaxTensorDims dimensional Tensors");
   return ones(dims, N, t, d, requires_grad);
 }
 
 template <size_t N>
 Tensor rand(const int64_t (&dims)[N], DataType t, Device d,
             bool requires_grad = false) {
-  static_assert(N <= 3, "We don't support more than 3 dimensional Tensors");
+  static_assert(N <= kMaxTensorDims,
+                "We don't support more than kMaxTensorDims dimensional Tensors");
   return rand(dims, N, t, d, requires_grad);
 }
 
