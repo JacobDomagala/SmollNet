@@ -70,7 +70,7 @@ public:
   bool requires_grad() const noexcept;
   Tensor grad() const noexcept;
   AutogradMeta *autograd() const noexcept;
-  int64_t size(int d) const noexcept;
+  int64_t size(int64_t d) const noexcept;
   int64_t ndims() const noexcept;
   Device device() const noexcept;
   DataType dtype() const noexcept;

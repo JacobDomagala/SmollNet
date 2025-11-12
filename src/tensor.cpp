@@ -135,9 +135,10 @@ void compute_binary_offsets(size_t idx, const TensorShape &shape,
   lhs_offset = 0;
   rhs_offset = 0;
 
+  int64_t remaining = static_cast<int64_t>(idx);
   for (int64_t dim = rank - 1; dim >= 0; --dim) {
-    const int64_t coord = idx % shape[dim];
-    idx /= shape[dim];
+    const int64_t coord = remaining % shape[dim];
+    remaining /= shape[dim];
     lhs_offset += coord * lhs_strides[dim];
     rhs_offset += coord * rhs_strides[dim];
   }
@@ -341,7 +342,7 @@ Tensor Tensor::grad() const noexcept {
 
 AutogradMeta *Tensor::autograd() const noexcept { return impl()->grad.get(); }
 
-int64_t Tensor::size(int d) const noexcept { return impl()->sizes[d]; }
+int64_t Tensor::size(int64_t d) const noexcept { return impl()->sizes[d]; }
 
 int64_t Tensor::ndims() const noexcept { return impl()->ndim; }
 
