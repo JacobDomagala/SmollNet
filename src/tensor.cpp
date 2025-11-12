@@ -558,20 +558,16 @@ Tensor matmul(const Tensor &l, const Tensor &r) {
                      l.ndims(), r.ndims()));
 
   // TODO: allow for broadcast
-  ASSERT(l.dims().size() == r.dims().size(),
-         fmt::format("{} vs {}", l.dims().size(), r.dims().size()));
+  ASSERT(l.ndims() == r.ndims(),
+         fmt::format("Matmul rank mismatch: {} vs {}", l.ndims(), r.ndims()));
+  ASSERT(l.ndims() == 2,
+         fmt::format("Matmul currently supports 2D tensors, got rank {}",
+                     l.ndims()));
 
-  if (l.ndims() == 2) {
-    ASSERT(l.dims()[1] == r.dims()[0],
-           fmt::format("Incorrect matrix size! lhs number of rows ({}) not "
-                       "equal to rhs number of cols ({})",
-                       l.dims()[1], r.dims()[0]));
-  } else {
-    ASSERT(l.dims()[2] == r.dims()[1],
-           fmt::format("Incorrect matrix size! lhs number of rows ({}) not "
-                       "equal to rhs number of cols ({})",
-                       l.dims()[2], r.dims()[1]));
-  }
+  ASSERT(l.dims()[1] == r.dims()[0],
+         fmt::format("Incorrect matrix size! lhs number of rows ({}) not "
+                     "equal to rhs number of cols ({})",
+                     l.dims()[1], r.dims()[0]));
 
   ASSERT(l.device() == r.device(),
          fmt::format("Device mismatch! {} and {}", get_device_name(l.device()),
@@ -581,32 +577,26 @@ Tensor matmul(const Tensor &l, const Tensor &r) {
   Tensor new_tensor =
       empty({l.dims()[0], r.dims()[1]}, l.dtype(), l.device(), needs_grad);
 
-  StrideInfo stride_info;
+  StrideInfo stride_info{};
   stride_info.output_size[0] = new_tensor.size(0);
   stride_info.output_size[1] = new_tensor.size(1);
 
   const auto &l_strides = l.strides();
-  ;
   stride_info.a_stride[0] = l_strides[0];
   stride_info.a_stride[1] = l_strides[1];
-  stride_info.a_stride[2] = l_strides[2];
 
   const auto &r_strides = r.strides();
-  ;
   stride_info.b_stride[0] = r_strides[0];
   stride_info.b_stride[1] = r_strides[1];
-  stride_info.b_stride[2] = r_strides[2];
 
   stride_info.rank = new_tensor.ndims();
 
-  SizeInfo size_info;
+  SizeInfo size_info{};
   size_info.a_size[0] = l.size(0);
   size_info.a_size[1] = l.size(1);
-  size_info.a_size[2] = l.size(2);
 
   size_info.b_size[0] = r.size(0);
   size_info.b_size[1] = r.size(1);
-  size_info.b_size[2] = r.size(2);
 
   launch_matmul(new_tensor.data(), l.data(), r.data(), stride_info, size_info,
                 new_tensor.numel());
