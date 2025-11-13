@@ -764,19 +764,20 @@ Tensor sum(const Tensor &t, int64_t dim, bool keep_dim) {
 
   if (device == Device::CPU) {
     for (size_t linear = 0; linear < new_tensor.numel(); ++linear) {
-      size_t remaining = linear;
+      int64_t remaining = static_cast<int64_t>(linear);
       int64_t input_base_offset = 0;
       int64_t output_offset = 0;
 
-      for (int64_t out_dim = s_output.rank - 1; out_dim >= 0; --out_dim) {
-        const int64_t coord = remaining % s_output.size[out_dim];
-        remaining /= s_output.size[out_dim];
+      for (int64_t out_dim = s_output.rank; out_dim > 0; --out_dim) {
+        const int64_t output_axis = out_dim - 1;
+        const int64_t coord = remaining % s_output.size[output_axis];
+        remaining /= s_output.size[output_axis];
 
-        output_offset += coord * s_output.stride[out_dim];
+        output_offset += coord * s_output.stride[output_axis];
 
         const bool kept_dim = s_output.rank == s_input.rank;
         const int64_t input_dim =
-            kept_dim || out_dim < dim ? out_dim : out_dim + 1;
+            kept_dim || output_axis < dim ? output_axis : output_axis + 1;
         input_base_offset += coord * s_input.stride[input_dim];
       }
 
