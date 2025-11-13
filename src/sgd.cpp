@@ -17,7 +17,8 @@ void SGD::step() const {
                          grad.size(dim)));
     }
 
-    launch_sgd_update(p.data(), grad.data(), lr_, p.numel());
+    launch_sgd_update(p.data(), grad.data(), p.dtype(), grad.dtype(), lr_,
+                      p.numel());
   }
 }
 

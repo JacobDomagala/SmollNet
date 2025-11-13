@@ -1,4 +1,5 @@
 #include "autograd.hpp"
+#include "dtype_utils.hpp"
 #include "helpers.hpp"
 #include "kernels.cuh"
 
@@ -116,7 +117,7 @@ SubFunction::backward(const std::vector<Tensor> &grad_outputs) {
       }
     }
 
-    launch_negative(grad.data(), grad.numel());
+    launch_negative(grad.data(), grad.dtype(), grad.numel());
     grad_inputs[1] = grad;
   }
 
@@ -187,7 +188,7 @@ DivFunction::backward(const std::vector<Tensor> &grad_outputs) {
   if (needs_input_grad[1]) {
     Tensor grad = (grad_outputs[0] * inputs[0]) / (inputs[1] * inputs[1]);
     grad = reduce_broadcast_gradient(grad, inputs[1]);
-    launch_negative(grad.data(), grad.numel());
+    launch_negative(grad.data(), grad.dtype(), grad.numel());
     grad_inputs[1] = grad;
   }
 
@@ -239,7 +240,7 @@ ReLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
   if (needs_input_grad[0]) {
     gi[0] = create_grad_tensor(inputs[0]);
     launch_relu_grad(gi[0].data(), grad_outputs[0].data(), inputs[0].data(),
-                     gi[0].numel());
+                     gi[0].dtype(), gi[0].numel());
   }
   return gi;
 }
@@ -257,7 +258,7 @@ GeLUFunction::backward(const std::vector<Tensor> &grad_outputs) {
   if (needs_input_grad[0]) {
     gi[0] = create_grad_tensor(inputs[0]);
     launch_gelu_grad(gi[0].data(), grad_outputs[0].data(), inputs[0].data(),
-                     gi[0].numel());
+                     gi[0].dtype(), gi[0].numel());
   }
   return gi;
 }
@@ -278,7 +279,8 @@ TanhFunction::backward(const std::vector<Tensor> &grad_outputs) {
   if (needs_input_grad[0]) {
     auto grad_input = create_grad_tensor(inputs[0]);
     launch_tanh_grad(grad_input.data(), grad_outputs.front().data(),
-                     inputs[0].data(), grad_input.numel());
+                     inputs[0].data(), grad_input.dtype(),
+                     grad_input.numel());
     grad_inputs[0] = grad_input;
   }
 
@@ -302,7 +304,8 @@ SigmoidFunction::backward(const std::vector<Tensor> &grad_outputs) {
 
     auto grad_input = create_grad_tensor(inputs[0]);
     launch_sigmoid_grad(grad_input.data(), grad_outputs.front().data(),
-                        inputs[0].data(), grad_input.numel());
+                        inputs[0].data(), grad_input.dtype(),
+                        grad_input.numel());
     grad_inputs[0] = grad_input;
   }
 
@@ -341,17 +344,20 @@ MseFunction::MseFunction(const Tensor &pred, const Tensor &tgt) : N(pred.numel()
 
 std::vector<Tensor> MseFunction::backward(const std::vector<Tensor> &grad_outputs) {
   ASSERT(grad_outputs.size() == 1, "MSE backward expects 1 grad_output (scalar)");
-  float c =
-      *static_cast<float *>(grad_outputs[0].cpu().data()) * (2.f / static_cast<float>(N));
+  Tensor grad_output_cpu = grad_outputs[0].cpu();
+  float c = load_scalar(grad_output_cpu.data(), grad_output_cpu.dtype(), 0) *
+            (2.f / static_cast<float>(N));
 
   std::vector<Tensor> gi(2);
   if (needs_input_grad[0]) {
     gi[0] = create_grad_tensor(inputs[0]);
-    launch_mse_grad(gi[0].data(), inputs[0].data(), inputs[1].data(), c, N);
+    launch_mse_grad(gi[0].data(), inputs[0].data(), inputs[1].data(),
+                    gi[0].dtype(), c, N);
   }
   if (needs_input_grad[1]) {
     gi[1] = create_grad_tensor(inputs[1]);
-    launch_mse_grad(gi[1].data(), inputs[0].data(), inputs[1].data(), -c, N);
+    launch_mse_grad(gi[1].data(), inputs[0].data(), inputs[1].data(),
+                    gi[1].dtype(), -c, N);
   }
   return gi;
 }
@@ -392,8 +398,8 @@ LayerNormFunction::backward(const std::vector<Tensor> &grad_outputs) {
                     hat_x.device(), true);
 
   launch_layer_norm_grad(dx.data(), hat_x.data(), delta.data(), variance.data(),
-                         sum_delta.data(), sum_dh.data(), hat_x.size(0),
-                         hat_x.size(1));
+                         sum_delta.data(), sum_dh.data(), dx.dtype(),
+                         variance.dtype(), hat_x.size(0), hat_x.size(1));
 
   /* ---------- gradient w.r.t. γ (scale) ---------- */
   // sum over batch → shape [F,1]
