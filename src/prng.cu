@@ -1,3 +1,4 @@
+#include "dtype_utils.hpp"
 #include "helpers.hpp"
 
 #include <cuda_runtime.h>
@@ -15,7 +16,8 @@ std::size_t g_num_states = 0;
 
 } // namespace
 
-__global__ void random_fill_kernel(float *out,
+template <typename T>
+__global__ void random_fill_kernel(T *out,
                                    curandStatePhilox4_32_10_t *states,
                                    std::size_t total,
                                    std::size_t num_states) {
@@ -34,19 +36,19 @@ __global__ void random_fill_kernel(float *out,
   while (idx < total) {
     const float4 r = curand_uniform4(&local_state);
 
-    out[idx] = r.x;
+    out[idx] = scalar_from_float<T>(r.x);
     idx += stride;
 
     if (idx >= total) break;
-    out[idx] = r.y;
+    out[idx] = scalar_from_float<T>(r.y);
     idx += stride;
 
     if (idx >= total) break;
-    out[idx] = r.z;
+    out[idx] = scalar_from_float<T>(r.z);
     idx += stride;
 
     if (idx >= total) break;
-    out[idx] = r.w;
+    out[idx] = scalar_from_float<T>(r.w);
     idx += stride;
   }
 
@@ -98,7 +100,7 @@ void launch_random_init(unsigned long long seed) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-void launch_random_fill(void *out, std::size_t total) {
+void launch_random_fill(void *out, DataType dtype, std::size_t total) {
   if (d_states == nullptr || g_num_states == 0) {
     launch_random_init(1234ULL);
   }
@@ -106,8 +108,10 @@ void launch_random_fill(void *out, std::size_t total) {
   dim3 block_size(kBlockSize);
   dim3 grid_size((g_num_states + block_size.x - 1) / block_size.x);
 
-  random_fill_kernel<<<grid_size, block_size>>>(static_cast<float *>(out),
-                                                d_states, total, g_num_states);
+  dispatch_float_dtype(dtype, [&]<typename T>() {
+    random_fill_kernel<T><<<grid_size, block_size>>>(
+        static_cast<T *>(out), d_states, total, g_num_states);
+  });
 
   CHECK_CUDA(cudaGetLastError());
 }
