@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cuda.h>
 
+#include "dtype_utils.hpp"
 #include "kernels.cuh"
 #include "welford_internal.inl"
 namespace smollnet {
@@ -40,8 +41,8 @@ __device__ __forceinline__ WelfordData merge(const WelfordData &a,
   return out;
 }
 
-template <int32_t CHUNK_SIZE, uint32_t BLOCK_DIM>
-__global__ void welford_row_first_pass(const float *__restrict__ in,
+template <typename InT, int32_t CHUNK_SIZE, uint32_t BLOCK_DIM>
+__global__ void welford_row_first_pass(const InT *__restrict__ in,
                                        WelfordData *__restrict__ out,
                                        const size_t num_features,
                                        const size_t num_rows) {
@@ -53,7 +54,7 @@ __global__ void welford_row_first_pass(const float *__restrict__ in,
 
   uint32_t base_idx = feature + batch * num_features * CHUNK_SIZE;
 
-  WelfordData localData;
+  WelfordData localData{};
 
   __shared__ WelfordData sMem[BLOCK_DIM / 32];
 
@@ -67,7 +68,7 @@ __global__ void welford_row_first_pass(const float *__restrict__ in,
     if (row >= num_rows)
       return;
 
-    float v = is_valid ? in[idx] : 0.0f;
+    float v = is_valid ? scalar_to_float(in[idx]) : 0.0f;
     update(localData, v, is_valid);
 
 #pragma unroll
@@ -102,10 +103,10 @@ __global__ void welford_row_first_pass(const float *__restrict__ in,
   }
 }
 
-template <int32_t BLOCK_DIM>
+template <typename OutT, int32_t BLOCK_DIM>
 __global__ void
 welford_row_second_pass(const WelfordData *__restrict__ in,
-                        float *__restrict__ out, const int32_t num_elems,
+                        OutT *__restrict__ out, const int32_t num_elems,
                         const int32_t num_iter, WelfordType type) {
   const auto col = threadIdx.x;
   const auto row = blockIdx.x;
@@ -154,22 +155,24 @@ welford_row_second_pass(const WelfordData *__restrict__ in,
   if (threadIdx.x == 0) {
     switch (type) {
     case WelfordType::Mean: {
-      out[blockIdx.x] = final_result.mean;
+      out[blockIdx.x] = scalar_from_float<OutT>(final_result.mean);
     } break;
 
     case WelfordType::PopulationVariance: {
-      out[blockIdx.x] = final_result.M2 / final_result.count;
+      out[blockIdx.x] =
+          scalar_from_float<OutT>(final_result.M2 / final_result.count);
     } break;
 
     case WelfordType::SampleVariance: {
-      out[blockIdx.x] = final_result.M2 / (final_result.count - 1);
+      out[blockIdx.x] =
+          scalar_from_float<OutT>(final_result.M2 / (final_result.count - 1));
     } break;
     }
   }
 }
 
-template <int32_t CHUNK_SIZE>
-__global__ void welford_column_first_pass(const float *__restrict__ in,
+template <typename InT, int32_t CHUNK_SIZE>
+__global__ void welford_column_first_pass(const InT *__restrict__ in,
                                           WelfordData *__restrict__ out,
                                           const size_t num_features,
                                           const size_t size) {
@@ -180,7 +183,7 @@ __global__ void welford_column_first_pass(const float *__restrict__ in,
   if (feature >= num_features)
     return;
 
-  WelfordData localData;
+  WelfordData localData{};
 
   const uint32_t base_idx = batch * num_features + feature;
   const uint32_t output_idx = num_features * blockIdx.y + feature;
@@ -195,7 +198,7 @@ __global__ void welford_column_first_pass(const float *__restrict__ in,
       return;
     }
 
-    float v = in[idx];
+    float v = scalar_to_float(in[idx]);
 
     update(localData, v, true);
   }
@@ -203,8 +206,9 @@ __global__ void welford_column_first_pass(const float *__restrict__ in,
   out[output_idx] = localData;
 }
 
+template <typename OutT>
 __global__ void welford_column_second_pass(const WelfordData *__restrict__ in,
-                                           float *__restrict__ out,
+                                           OutT *__restrict__ out,
                                            const size_t num_features,
                                            const uint32_t num_rows,
                                            WelfordType type) {
@@ -224,21 +228,22 @@ __global__ void welford_column_second_pass(const WelfordData *__restrict__ in,
 
   switch (type) {
   case WelfordType::Mean: {
-    out[base_idx] = local.mean;
+    out[base_idx] = scalar_from_float<OutT>(local.mean);
   } break;
 
   case WelfordType::PopulationVariance: {
-    out[base_idx] = local.M2 / local.count;
+    out[base_idx] = scalar_from_float<OutT>(local.M2 / local.count);
   } break;
 
   case WelfordType::SampleVariance: {
-    out[base_idx] = local.M2 / (local.count - 1);
+    out[base_idx] = scalar_from_float<OutT>(local.M2 / (local.count - 1));
   } break;
   }
 }
 
-void launch_welford(void *in, void *out, size_t num_features, size_t batch_size,
-                    int32_t dim, WelfordType type) {
+void launch_welford(const void *in, DataType in_dtype, void *out,
+                    DataType out_dtype, size_t num_features,
+                    size_t batch_size, int32_t dim, WelfordType type) {
   if (num_features == 0 || batch_size == 0)
     return;
 
@@ -257,24 +262,29 @@ void launch_welford(void *in, void *out, size_t num_features, size_t batch_size,
 
     dim3 grid_size(feature_blocks, row_chunks);
 
-    cudaMalloc(&staging_buffer,
-               sizeof(WelfordData) * feature_blocks * batch_size);
+    CHECK_CUDA(cudaMalloc(&staging_buffer,
+                          sizeof(WelfordData) * feature_blocks * batch_size));
 
-    welford_row_first_pass<welford_internal::kRowChunkSize,
-                           welford_internal::kBlockDim>
-        <<<grid_size, block_size>>>(static_cast<const float *>(in),
-                                    static_cast<WelfordData *>(staging_buffer),
-                                    num_features, batch_size);
+    dispatch_float_dtype(in_dtype, [&]<typename InT>() {
+      welford_row_first_pass<InT, welford_internal::kRowChunkSize,
+                             welford_internal::kBlockDim>
+          <<<grid_size, block_size>>>(
+              static_cast<const InT *>(in),
+              static_cast<WelfordData *>(staging_buffer), num_features,
+              batch_size);
+    });
 
     const int32_t num_iter =
         (feature_blocks + welford_internal::kBlockDim - 1) /
         welford_internal::kBlockDim;
 
-    welford_row_second_pass<welford_internal::kBlockDim>
-        <<<batch_size, block_size>>>(
-        static_cast<const WelfordData *>(staging_buffer),
-        static_cast<float *>(out), static_cast<int32_t>(feature_blocks),
-        num_iter, type);
+    dispatch_float_dtype(out_dtype, [&]<typename OutT>() {
+      welford_row_second_pass<OutT, welford_internal::kBlockDim>
+          <<<batch_size, block_size>>>(
+              static_cast<const WelfordData *>(staging_buffer),
+              static_cast<OutT *>(out), static_cast<int32_t>(feature_blocks),
+              num_iter, type);
+    });
   } else if (dim == 1) {
     const uint32_t col_chunks =
         (batch_size + welford_internal::kColChunkSize - 1) /
@@ -282,20 +292,26 @@ void launch_welford(void *in, void *out, size_t num_features, size_t batch_size,
 
     dim3 grid_size(feature_blocks, col_chunks);
 
-    cudaMalloc(&staging_buffer,
-               sizeof(WelfordData) * num_features * col_chunks);
+    CHECK_CUDA(cudaMalloc(&staging_buffer,
+                          sizeof(WelfordData) * num_features * col_chunks));
 
-    welford_column_first_pass<welford_internal::kColChunkSize>
-        <<<grid_size, block_size>>>(static_cast<const float *>(in),
-                                    static_cast<WelfordData *>(staging_buffer),
-                                    num_features, num_features * batch_size);
+    dispatch_float_dtype(in_dtype, [&]<typename InT>() {
+      welford_column_first_pass<InT, welford_internal::kColChunkSize>
+          <<<grid_size, block_size>>>(
+              static_cast<const InT *>(in),
+              static_cast<WelfordData *>(staging_buffer), num_features,
+              num_features * batch_size);
+    });
 
-    welford_column_second_pass<<<feature_blocks, block_size>>>(
-        static_cast<const WelfordData *>(staging_buffer),
-        static_cast<float *>(out), num_features, col_chunks, type);
+    dispatch_float_dtype(out_dtype, [&]<typename OutT>() {
+      welford_column_second_pass<OutT><<<feature_blocks, block_size>>>(
+          static_cast<const WelfordData *>(staging_buffer),
+          static_cast<OutT *>(out), num_features, col_chunks, type);
+    });
   }
 
-  cudaFree(staging_buffer);
+  CHECK_CUDA(cudaGetLastError());
+  CHECK_CUDA(cudaFree(staging_buffer));
 }
 
 } // namespace smollnet
