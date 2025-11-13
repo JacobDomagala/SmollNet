@@ -748,7 +748,7 @@ Tensor sum(const Tensor &t, int64_t dim, bool keep_dim) {
   Tensor new_tensor =
       zeros(out_dims.data(), new_rank, output_type, device, t.requires_grad());
 
-  auto *srcp = t.data();
+  const auto *srcp = t.data();
   auto *dst = new_tensor.data();
 
   StrideAndSize s_input{};
