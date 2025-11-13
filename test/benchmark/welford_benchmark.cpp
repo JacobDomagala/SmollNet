@@ -155,8 +155,8 @@ BenchmarkResult run_case(const BenchmarkCase &cfg,
   Tensor variance = zeros(output_dims, DataType::f32, Device::CUDA);
 
   const auto timing = bench::measure_cuda_operation(run_cfg, [&] {
-    launch_welford(input.data(), variance.data(), cfg.num_features,
-                   cfg.batch_size, mode.dim,
+    launch_welford(input.data(), input.dtype(), variance.data(),
+                   variance.dtype(), cfg.num_features, cfg.batch_size, mode.dim,
                    WelfordType::PopulationVariance);
   });
 

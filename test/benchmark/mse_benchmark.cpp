@@ -143,7 +143,8 @@ BenchmarkResult run_case(const BenchmarkCase &cfg,
   Tensor loss = zeros({1}, DataType::f32, Device::CUDA);
 
   const auto timing = bench::measure_cuda_operation(run_cfg, [&] {
-    launch_mse(loss.data(), pred.data(), target.data(), cfg.elements);
+    launch_mse(loss.data(), loss.dtype(), pred.data(), target.data(),
+               pred.dtype(), cfg.elements);
   });
 
   const double total_elems = static_cast<double>(cfg.elements);
