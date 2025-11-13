@@ -67,7 +67,8 @@ jobs:
         apt-get install -y \
           cuda-minimal-build-13-2 \
           cuda-cudart-dev-13-2 \
-          cuda-cccl-13-2
+          cuda-cccl-13-2 \
+          python3-dev
     
         rm -f cuda-keyring_1.1-1_all.deb
         EOF
