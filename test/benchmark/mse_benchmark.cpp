@@ -21,6 +21,11 @@ struct BenchmarkCase {
   size_t elements;
 };
 
+struct BenchmarkDType {
+  const char *label;
+  DataType dtype;
+};
+
 struct BenchmarkConfig {
   BenchmarkCase single_case{1ull << 24};
   bench::RunConfig run;
@@ -35,6 +40,11 @@ constexpr std::array<BenchmarkCase, 7> kDefaultCases = {{
     {1ull << 22},
     {1ull << 24},
     {1ull << 25},
+}};
+
+constexpr std::array<BenchmarkDType, 2> kDTypes = {{
+    {"fp32", DataType::f32},
+    {"fp16", DataType::f16},
 }};
 
 size_t parse_size_arg(const char *text, const char *name) {
@@ -91,8 +101,9 @@ size_t blocks_per_launch(const BenchmarkCase &cfg) {
   return ceil_div(cfg.elements, static_cast<size_t>(kMseBlockSize));
 }
 
-double input_bytes_per_iteration(const BenchmarkCase &cfg) {
-  return static_cast<double>(cfg.elements) * 2.0 * sizeof(float);
+double input_bytes_per_iteration(const BenchmarkCase &cfg, DataType dtype) {
+  return static_cast<double>(cfg.elements) * 2.0 *
+         static_cast<double>(element_size(dtype));
 }
 
 double flops_per_iteration(const BenchmarkCase &cfg) {
@@ -135,12 +146,13 @@ struct BenchmarkResult {
 };
 
 BenchmarkResult run_case(const BenchmarkCase &cfg,
+                         const BenchmarkDType &dtype,
                          const bench::RunConfig &run_cfg) {
-  Tensor pred = rand({static_cast<int64_t>(cfg.elements)}, DataType::f32,
+  Tensor pred = rand({static_cast<int64_t>(cfg.elements)}, dtype.dtype,
                      Device::CUDA);
-  Tensor target = rand({static_cast<int64_t>(cfg.elements)}, DataType::f32,
+  Tensor target = rand({static_cast<int64_t>(cfg.elements)}, dtype.dtype,
                        Device::CUDA);
-  Tensor loss = zeros({1}, DataType::f32, Device::CUDA);
+  Tensor loss = zeros({1}, dtype.dtype, Device::CUDA);
 
   const auto timing = bench::measure_cuda_operation(run_cfg, [&] {
     launch_mse(loss.data(), loss.dtype(), pred.data(), target.data(),
@@ -148,7 +160,8 @@ BenchmarkResult run_case(const BenchmarkCase &cfg,
   });
 
   const double total_elems = static_cast<double>(cfg.elements);
-  const double input_bytes_per_iter = input_bytes_per_iteration(cfg);
+  const double input_bytes_per_iter =
+      input_bytes_per_iteration(cfg, dtype.dtype);
   const double flops_per_iter = flops_per_iteration(cfg);
   const double effective_input_gb_per_sec =
       (input_bytes_per_iter / (timing.avg_ms / 1000.0)) / 1.0e9;
@@ -168,8 +181,10 @@ BenchmarkResult run_case(const BenchmarkCase &cfg,
   };
 }
 
-void print_case(const BenchmarkCase &cfg, const BenchmarkResult &result) {
+void print_case(const BenchmarkCase &cfg, const BenchmarkDType &dtype,
+                const BenchmarkResult &result) {
   bench::print_fields({
+      bench::field("dtype", bench::ansi::kBoldMagenta, "{}", dtype.label),
       bench::field("elements", bench::ansi::kBoldBlue, "{:>12}",
                    cfg.elements),
       bench::field("blocks", bench::ansi::kBoldCyan, "{:>9}",
@@ -208,14 +223,19 @@ int main(int argc, char **argv) {
     bench::print_fields({
         bench::field("suite_cases", bench::ansi::kBoldGreen, "{}",
                      kDefaultCases.size()),
+        bench::field("dtypes", bench::ansi::kBoldMagenta, "fp32,fp16"),
     });
     for (const auto &bench_case : kDefaultCases) {
-      const auto result = run_case(bench_case, cfg.run);
-      print_case(bench_case, result);
+      for (const auto &dtype : kDTypes) {
+        const auto result = run_case(bench_case, dtype, cfg.run);
+        print_case(bench_case, dtype, result);
+      }
     }
   } else {
-    const auto result = run_case(cfg.single_case, cfg.run);
-    print_case(cfg.single_case, result);
+    for (const auto &dtype : kDTypes) {
+      const auto result = run_case(cfg.single_case, dtype, cfg.run);
+      print_case(cfg.single_case, dtype, result);
+    }
   }
 
   return 0;
