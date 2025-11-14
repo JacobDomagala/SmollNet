@@ -18,6 +18,11 @@ struct WelfordBenchmarkMode {
   int32_t dim;
 };
 
+struct WelfordBenchmarkDType {
+  const char *label;
+  DataType dtype;
+};
+
 struct WelfordStageEntry {
   int count;
   float mean;
@@ -76,6 +81,11 @@ constexpr std::array<WelfordBenchmarkMode, 2> kModes = {{
     {"column", 1},
 }};
 
+constexpr std::array<WelfordBenchmarkDType, 2> kDTypes = {{
+    {"fp32", DataType::f32},
+    {"fp16", DataType::f16},
+}};
+
 size_t ceil_div(size_t numerator, size_t denominator) {
   return (numerator + denominator - 1) / denominator;
 }
@@ -109,10 +119,11 @@ BenchmarkConfig parse_args(int argc, char **argv) {
 }
 
 double bytes_per_iteration(const BenchmarkCase &cfg,
-                           const WelfordBenchmarkMode &mode) {
+                           const WelfordBenchmarkMode &mode,
+                           DataType dtype) {
   const double input_bytes = static_cast<double>(cfg.batch_size) *
                              static_cast<double>(cfg.num_features) *
-                             sizeof(float);
+                             static_cast<double>(element_size(dtype));
   const double stage_entries =
       mode.dim == 0
           ? static_cast<double>(ceil_div(cfg.num_features,
@@ -124,7 +135,8 @@ double bytes_per_iteration(const BenchmarkCase &cfg,
   const double staging_bytes =
       stage_entries * static_cast<double>(sizeof(WelfordStageEntry));
   const double output_bytes =
-      static_cast<double>(output_elements(cfg, mode)) * sizeof(float);
+      static_cast<double>(output_elements(cfg, mode)) *
+      static_cast<double>(element_size(dtype));
 
   // launch_welford is two-pass for both dim=0 and dim=1:
   // 1) read input, write Welford staging tuples
@@ -143,16 +155,17 @@ struct BenchmarkResult {
 
 BenchmarkResult run_case(const BenchmarkCase &cfg,
                          const WelfordBenchmarkMode &mode,
+                         const WelfordBenchmarkDType &dtype,
                          const bench::RunConfig &run_cfg) {
   Tensor input = rand({static_cast<int64_t>(cfg.batch_size),
                        static_cast<int64_t>(cfg.num_features)},
-                      DataType::f32, Device::CUDA);
+                      dtype.dtype, Device::CUDA);
 
   const int64_t output_dims[2] = {
       mode.dim == 0 ? static_cast<int64_t>(cfg.batch_size) : 1,
       mode.dim == 0 ? 1 : static_cast<int64_t>(cfg.num_features),
   };
-  Tensor variance = zeros(output_dims, DataType::f32, Device::CUDA);
+  Tensor variance = zeros(output_dims, dtype.dtype, Device::CUDA);
 
   const auto timing = bench::measure_cuda_operation(run_cfg, [&] {
     launch_welford(input.data(), input.dtype(), variance.data(),
@@ -162,7 +175,7 @@ BenchmarkResult run_case(const BenchmarkCase &cfg,
 
   const double total_elems = static_cast<double>(cfg.batch_size) *
                              static_cast<double>(cfg.num_features);
-  const double bytes_per_iter = bytes_per_iteration(cfg, mode);
+  const double bytes_per_iter = bytes_per_iteration(cfg, mode, dtype.dtype);
   const double effective_gb_per_sec =
       (bytes_per_iter / (timing.avg_ms / 1000.0)) / 1.0e9;
 
@@ -176,10 +189,12 @@ BenchmarkResult run_case(const BenchmarkCase &cfg,
   };
 }
 
-void print_case(const WelfordBenchmarkMode &mode, const BenchmarkCase &cfg,
+void print_case(const WelfordBenchmarkMode &mode,
+                const WelfordBenchmarkDType &dtype, const BenchmarkCase &cfg,
                 const BenchmarkResult &result) {
   bench::print_fields({
       bench::field("axis", bench::ansi::kBoldCyan, "{}", mode.label),
+      bench::field("dtype", bench::ansi::kBoldMagenta, "{}", dtype.label),
       bench::field("batch", bench::ansi::kBoldBlue, "{:>6}", cfg.batch_size),
       bench::field("features", bench::ansi::kBoldBlue, "{:>6}",
                    cfg.num_features),
@@ -213,17 +228,22 @@ int main(int argc, char **argv) {
         bench::field("suite_cases", bench::ansi::kBoldGreen, "{}",
                      kDefaultCases.size()),
         bench::field("axes", bench::ansi::kBoldCyan, "row,column"),
+        bench::field("dtypes", bench::ansi::kBoldMagenta, "fp32,fp16"),
     });
     for (const auto &bench_case : kDefaultCases) {
-      for (const auto &mode : kModes) {
-        const auto result = run_case(bench_case, mode, cfg.run);
-        print_case(mode, bench_case, result);
+      for (const auto &dtype : kDTypes) {
+        for (const auto &mode : kModes) {
+          const auto result = run_case(bench_case, mode, dtype, cfg.run);
+          print_case(mode, dtype, bench_case, result);
+        }
       }
     }
   } else {
-    for (const auto &mode : kModes) {
-      const auto result = run_case(cfg.single_case, mode, cfg.run);
-      print_case(mode, cfg.single_case, result);
+    for (const auto &dtype : kDTypes) {
+      for (const auto &mode : kModes) {
+        const auto result = run_case(cfg.single_case, mode, dtype, cfg.run);
+        print_case(mode, dtype, cfg.single_case, result);
+      }
     }
   }
 
