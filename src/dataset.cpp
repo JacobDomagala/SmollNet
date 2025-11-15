@@ -223,11 +223,11 @@ make_categorical_lookup(size_t feature_columns,
 size_t
 expanded_feature_columns(size_t feature_columns,
                          const std::vector<CategoricalFeature> &features) {
-  size_t expanded = feature_columns;
-  for (const auto &feature : features) {
-    expanded += feature.categories.size() - 1;
-  }
-  return expanded;
+  return std::accumulate(
+      features.begin(), features.end(), feature_columns,
+      [](size_t total, const CategoricalFeature &feature) {
+        return total + feature.categories.size() - 1;
+      });
 }
 
 void append_encoded_feature(std::vector<float> &input_values,
