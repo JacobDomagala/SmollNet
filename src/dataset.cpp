@@ -12,8 +12,10 @@
 #include <memory>
 #include <numeric>
 #include <random>
+#include <set>
 #include <sstream>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 
 #include <cuda_runtime.h>
@@ -21,6 +23,19 @@
 
 namespace smollnet {
 namespace {
+
+struct CSVRow {
+  size_t line_number = 0;
+  std::vector<std::string> cells;
+};
+
+struct CategoricalFeature {
+  size_t column = 0;
+  std::vector<std::string> categories;
+  std::unordered_map<std::string, size_t> index_by_category;
+};
+
+constexpr size_t kNoCategoricalFeature = static_cast<size_t>(-1);
 
 DataLoaderOptions make_loader_options(size_t batch_size, bool shuffle,
                                       bool drop_last, uint32_t seed) {
@@ -112,9 +127,9 @@ std::string trim(std::string_view value) {
   return std::string(value.substr(begin, end - begin));
 }
 
-std::vector<float> parse_csv_row(std::string_view line, char delimiter,
-                                 size_t line_number) {
-  std::vector<float> values;
+std::vector<std::string> parse_csv_cells(std::string_view line, char delimiter,
+                                         size_t line_number) {
+  std::vector<std::string> cells;
   std::stringstream stream{std::string(line)};
   std::string cell;
 
@@ -122,17 +137,118 @@ std::vector<float> parse_csv_row(std::string_view line, char delimiter,
     const std::string cleaned = trim(cell);
     ASSERT(!cleaned.empty(),
            fmt::format("Empty CSV value at line {}", line_number));
-
-    try {
-      values.push_back(std::stof(cleaned));
-    } catch (const std::exception &) {
-      ASSERT(false, fmt::format("Invalid float value '{}' at line {}", cleaned,
-                                line_number));
-    }
+    cells.push_back(cleaned);
   }
 
-  ASSERT(!values.empty(), fmt::format("Empty CSV row at line {}", line_number));
-  return values;
+  ASSERT(!cells.empty(), fmt::format("Empty CSV row at line {}", line_number));
+  return cells;
+}
+
+float parse_float(std::string_view value, size_t line_number, size_t column) {
+  const std::string text(value);
+  size_t parsed_chars = 0;
+
+  try {
+    const float parsed = std::stof(text, &parsed_chars);
+    ASSERT(parsed_chars == text.size(),
+           fmt::format("Invalid float value '{}' at line {}, column {}", text,
+                       line_number, column + 1));
+    return parsed;
+  } catch (const std::exception &) {
+    ASSERT(false,
+           fmt::format("Invalid float value '{}' at line {}, column {}", text,
+                       line_number, column + 1));
+  }
+
+  return 0.0f;
+}
+
+std::vector<size_t>
+validate_categorical_columns(const CSVLoaderOptions &options,
+                             size_t feature_columns) {
+  std::vector<size_t> categorical_columns = options.categorical_columns;
+  std::sort(categorical_columns.begin(), categorical_columns.end());
+
+  for (size_t idx = 0; idx < categorical_columns.size(); ++idx) {
+    const size_t column = categorical_columns[idx];
+    ASSERT(column < feature_columns,
+           fmt::format("Categorical column {} must be an input feature column "
+                       "before the last {} target column(s)",
+                       column, options.target_columns));
+    ASSERT(idx == 0 || categorical_columns[idx - 1] != column,
+           fmt::format("Duplicate categorical column {}", column));
+  }
+
+  return categorical_columns;
+}
+
+std::vector<CategoricalFeature>
+collect_categorical_features(const std::vector<CSVRow> &rows,
+                             const std::vector<size_t> &columns) {
+  std::vector<CategoricalFeature> features;
+  features.reserve(columns.size());
+
+  for (size_t column : columns) {
+    std::set<std::string> unique_categories;
+    for (const auto &row : rows) {
+      unique_categories.insert(row.cells[column]);
+    }
+
+    CategoricalFeature feature;
+    feature.column = column;
+    feature.categories.assign(unique_categories.begin(),
+                              unique_categories.end());
+    for (size_t idx = 0; idx < feature.categories.size(); ++idx) {
+      feature.index_by_category.emplace(feature.categories[idx], idx);
+    }
+
+    features.push_back(std::move(feature));
+  }
+
+  return features;
+}
+
+std::vector<size_t>
+make_categorical_lookup(size_t feature_columns,
+                        const std::vector<CategoricalFeature> &features) {
+  std::vector<size_t> lookup(feature_columns, kNoCategoricalFeature);
+
+  for (size_t idx = 0; idx < features.size(); ++idx) {
+    lookup[features[idx].column] = idx;
+  }
+
+  return lookup;
+}
+
+size_t
+expanded_feature_columns(size_t feature_columns,
+                         const std::vector<CategoricalFeature> &features) {
+  size_t expanded = feature_columns;
+  for (const auto &feature : features) {
+    expanded += feature.categories.size() - 1;
+  }
+  return expanded;
+}
+
+void append_encoded_feature(std::vector<float> &input_values,
+                            const CSVRow &row, size_t column,
+                            const std::vector<CategoricalFeature> &features,
+                            size_t feature_index) {
+  if (feature_index == kNoCategoricalFeature) {
+    input_values.push_back(parse_float(row.cells[column], row.line_number,
+                                       column));
+    return;
+  }
+
+  const auto &feature = features[feature_index];
+  const auto category = feature.index_by_category.find(row.cells[column]);
+  ASSERT(category != feature.index_by_category.end(),
+         fmt::format("Unknown category '{}' at line {}, column {}",
+                     row.cells[column], row.line_number, column + 1));
+
+  for (size_t idx = 0; idx < feature.categories.size(); ++idx) {
+    input_values.push_back(idx == category->second ? 1.0f : 0.0f);
+  }
 }
 
 Tensor tensor_from_values(const std::vector<float> &values, int64_t rows,
@@ -317,7 +433,7 @@ TensorDatasetPtr load_csv_dataset(const std::string &path,
 
   std::vector<float> input_values;
   std::vector<float> target_values;
-  size_t rows = 0;
+  std::vector<CSVRow> csv_rows;
   size_t feature_columns = 0;
   size_t total_columns = 0;
   std::string line;
@@ -333,37 +449,58 @@ TensorDatasetPtr load_csv_dataset(const std::string &path,
       continue;
     }
 
-    std::vector<float> values =
-        parse_csv_row(line, options.delimiter, line_number);
-    if (rows == 0) {
-      total_columns = values.size();
+    std::vector<std::string> cells =
+        parse_csv_cells(line, options.delimiter, line_number);
+    if (csv_rows.empty()) {
+      total_columns = cells.size();
       ASSERT(total_columns > options.target_columns,
              fmt::format("CSV dataset needs at least one feature column and {} "
                          "target column(s), got {} columns",
                          options.target_columns, total_columns));
       feature_columns = total_columns - options.target_columns;
     } else {
-      ASSERT(values.size() == total_columns,
+      ASSERT(cells.size() == total_columns,
              fmt::format("CSV row {} has {} columns, expected {}", line_number,
-                         values.size(), total_columns));
+                         cells.size(), total_columns));
     }
 
-    input_values.insert(input_values.end(), values.begin(),
-                        values.begin() + static_cast<int64_t>(feature_columns));
-    target_values.insert(
-        target_values.end(),
-        values.begin() + static_cast<int64_t>(feature_columns), values.end());
-    ++rows;
+    csv_rows.push_back({line_number, std::move(cells)});
   }
 
-  ASSERT(rows > 0, fmt::format("CSV dataset '{}' has no data rows", path));
+  ASSERT(!csv_rows.empty(),
+         fmt::format("CSV dataset '{}' has no data rows", path));
 
-  Tensor inputs = tensor_from_values(input_values, static_cast<int64_t>(rows),
-                                     static_cast<int64_t>(feature_columns),
+  const std::vector<size_t> categorical_columns =
+      validate_categorical_columns(options, feature_columns);
+  const std::vector<CategoricalFeature> categorical_features =
+      collect_categorical_features(csv_rows, categorical_columns);
+  const std::vector<size_t> categorical_lookup =
+      make_categorical_lookup(feature_columns, categorical_features);
+  const size_t input_columns =
+      expanded_feature_columns(feature_columns, categorical_features);
+
+  input_values.reserve(csv_rows.size() * input_columns);
+  target_values.reserve(csv_rows.size() * options.target_columns);
+
+  for (const auto &row : csv_rows) {
+    for (size_t column = 0; column < feature_columns; ++column) {
+      append_encoded_feature(input_values, row, column, categorical_features,
+                             categorical_lookup[column]);
+    }
+
+    for (size_t column = feature_columns; column < total_columns; ++column) {
+      target_values.push_back(parse_float(row.cells[column], row.line_number,
+                                          column));
+    }
+  }
+
+  Tensor inputs = tensor_from_values(input_values,
+                                     static_cast<int64_t>(csv_rows.size()),
+                                     static_cast<int64_t>(input_columns),
                                      options.dtype, options.device,
                                      options.requires_grad);
   Tensor targets = tensor_from_values(
-      target_values, static_cast<int64_t>(rows),
+      target_values, static_cast<int64_t>(csv_rows.size()),
       static_cast<int64_t>(options.target_columns), options.dtype,
       options.device, options.requires_grad);
 

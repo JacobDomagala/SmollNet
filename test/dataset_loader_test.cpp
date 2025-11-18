@@ -21,6 +21,14 @@ void write_csv_fixture(const std::filesystem::path &path) {
   out << "5.0,6.0,30.0\n";
 }
 
+void write_named_csv_fixture(const std::filesystem::path &path) {
+  std::ofstream out(path);
+  out << "name,x0,y\n";
+  out << "alice,1.5,10.0\n";
+  out << "bob,2.5,20.0\n";
+  out << "alice,3.5,30.0\n";
+}
+
 } // namespace
 
 int main() {
@@ -86,6 +94,34 @@ int main() {
   ASSERT(dropped_tail.num_batches() == 1,
          "drop_last should remove the tail batch");
 
+  const auto named_path = std::filesystem::temp_directory_path() /
+                          "smollnet_named_dataset_loader_test.csv";
+  write_named_csv_fixture(named_path);
+
+  CSVLoaderOptions named_options;
+  named_options.device = Device::CPU;
+  named_options.categorical_columns = {0};
+
+  auto named_dataset = load_csv_dataset(named_path.string(), named_options);
+  ASSERT(named_dataset->size() == 3, "Named dataset should contain three rows");
+  ASSERT(named_dataset->inputs().size(1) == 3,
+         "Name column should expand to two one-hot columns plus x0");
+
+  DatasetBatch named_batch = named_dataset->batch(0, 2);
+  ASSERT(tensor_value(named_batch.inputs, 0) == 1.0f,
+         "Alice row should set the alice one-hot column");
+  ASSERT(tensor_value(named_batch.inputs, 1) == 0.0f,
+         "Alice row should clear the bob one-hot column");
+  ASSERT(tensor_value(named_batch.inputs, 2) == 1.5f,
+         "Alice row should keep the numeric feature");
+  ASSERT(tensor_value(named_batch.inputs, 3) == 0.0f,
+         "Bob row should clear the alice one-hot column");
+  ASSERT(tensor_value(named_batch.inputs, 4) == 1.0f,
+         "Bob row should set the bob one-hot column");
+  ASSERT(tensor_value(named_batch.inputs, 5) == 2.5f,
+         "Bob row should keep the numeric feature");
+
   std::filesystem::remove(path);
+  std::filesystem::remove(named_path);
   return 0;
 }

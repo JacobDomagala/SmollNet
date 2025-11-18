@@ -104,6 +104,7 @@ struct CSVLoaderOptions {
   bool has_header = true;
   char delimiter = ',';
   size_t target_columns = 1;
+  std::vector<size_t> categorical_columns;
   DataType dtype = DataType::f32;
   Device device = Device::CPU;
   bool requires_grad = false;

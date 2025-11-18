@@ -206,6 +206,8 @@ void bind_dataset_functions(pybind11::module &m) {
       .def_readwrite("delimiter", &smollnet::CSVLoaderOptions::delimiter)
       .def_readwrite("target_columns",
                      &smollnet::CSVLoaderOptions::target_columns)
+      .def_readwrite("categorical_columns",
+                     &smollnet::CSVLoaderOptions::categorical_columns)
       .def_readwrite("dtype", &smollnet::CSVLoaderOptions::dtype)
       .def_readwrite("device", &smollnet::CSVLoaderOptions::device)
       .def_readwrite("requires_grad",
