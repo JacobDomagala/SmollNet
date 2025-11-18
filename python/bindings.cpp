@@ -1,4 +1,5 @@
 #include "smollnet.hpp"
+#include "dtype_utils.hpp"
 
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
@@ -283,6 +284,14 @@ PYBIND11_MODULE(smollnet, m) {
       .def("cuda", &smollnet::Tensor::cuda)
       .def("cpu", &smollnet::Tensor::cpu)
       .def("copy", &smollnet::Tensor::copy)
+      .def("item",
+           [](const smollnet::Tensor &tensor) {
+             if (tensor.numel() != 1) {
+               throw std::invalid_argument("Tensor.item() expects one element");
+             }
+             smollnet::Tensor host = tensor.cpu();
+             return smollnet::load_scalar(host.data(), host.dtype(), 0);
+           })
 
       .def(-py::self)
       .def(py::self + py::self)
