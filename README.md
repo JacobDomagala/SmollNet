@@ -83,3 +83,37 @@ for epoch in range(num_epochs):
 
     print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss}")
 ```
+
+Loading a CSV dataset:
+
+```cpp
+CSVLoaderOptions options;
+options.target_columns = 1;
+options.device = Device::CUDA;
+
+auto dataset = load_csv_dataset("train.csv", options);
+
+DataLoaderOptions loader_opts;
+loader_opts.batch_size = 32;
+loader_opts.shuffle = true;
+
+auto loader = DataLoader(dataset, loader_opts);
+
+for (auto &batch : loader) {
+  auto predictions = network.forward(batch.inputs);
+  auto loss = mse(predictions, batch.targets);
+}
+```
+
+```python
+options = smollnet.CSVLoaderOptions()
+options.target_columns = 1
+options.device = smollnet.Device.CUDA
+
+dataset = smollnet.load_csv_dataset("train.csv", options)
+loader = smollnet.DataLoader(dataset, batch_size=32, shuffle=True)
+
+for batch in loader:
+    predictions = network.forward(batch.inputs)
+    loss = smollnet.mse(predictions, batch.targets)
+```
