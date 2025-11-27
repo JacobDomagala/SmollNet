@@ -51,7 +51,7 @@ The build script installs the C++ library and Python extension into
 To import the Python extension from the local build:
 
 ```bash
-PYTHONPATH=build/smollnet python3 -c "import smollnet; print(smollnet)"
+PYTHONPATH=build python3 -c "import smollnet; print(smollnet)"
 ```
 
 ## Python Quick Start
@@ -116,7 +116,7 @@ example trains a small regression model to predict shell rings from one
 categorical feature and seven numeric features:
 
 ```bash
-PYTHONPATH=build/smollnet python3 example/abalone_regression.py
+PYTHONPATH=build python3 example/abalone_regression.py
 ```
 
 The current neural-network layers allocate CUDA tensors, so this example needs a
