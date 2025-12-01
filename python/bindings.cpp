@@ -130,6 +130,8 @@ void bind_tensor_creation_functions(pybind11::module &m) {
   bind_tensor_creation_overloads(m, "ones", OnesFunctor{});
   bind_tensor_creation_overloads(m, "empty", EmptyFunctor{});
 
+  m.def("empty_like", &smollnet::empty_like, "tensor"_a,
+        "requires_grad"_a = false);
   m.def("full_like", &smollnet::full_like, "tensor"_a, "value"_a,
         "requires_grad"_a = false);
   m.def("zeros_like", &smollnet::zeros_like, "tensor"_a,
