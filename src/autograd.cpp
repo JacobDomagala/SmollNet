@@ -287,10 +287,11 @@ TanhFunction::backward(const std::vector<Tensor> &grad_outputs) {
   return grad_inputs;
 }
 
-// SigmoidFunction implementation
-SigmoidFunction::SigmoidFunction(const Tensor &input) {
+SigmoidFunction::SigmoidFunction(const Tensor &input,
+                                 const Tensor &sigmoid_output) {
   inputs = {input};
   needs_input_grad = {input.initialized() && input.requires_grad()};
+  sigmoid_output_data_ = sigmoid_output.data();
 }
 
 std::vector<Tensor>
@@ -304,7 +305,7 @@ SigmoidFunction::backward(const std::vector<Tensor> &grad_outputs) {
 
     auto grad_input = create_grad_tensor(inputs[0]);
     launch_sigmoid_grad(grad_input.data(), grad_outputs.front().data(),
-                        inputs[0].data(), grad_input.dtype(),
+                        sigmoid_output_data_, grad_input.dtype(),
                         grad_input.numel());
     grad_inputs[0] = grad_input;
   }

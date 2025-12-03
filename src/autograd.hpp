@@ -89,10 +89,14 @@ struct TanhFunction : Function {
 };
 
 struct SigmoidFunction : Function {
-  explicit SigmoidFunction(const Tensor &input);
+  SigmoidFunction(const Tensor &input, const Tensor &sigmoid_output);
   std::vector<Tensor>
   backward(const std::vector<Tensor> &grad_outputs) override;
   void print() const override { printf("SigmoidFunction\n"); }
+
+private:
+  // We're not storing Tensor here to avoid refernce cycle
+  const void *sigmoid_output_data_ = nullptr;
 };
 
 struct SumFunction : Function {

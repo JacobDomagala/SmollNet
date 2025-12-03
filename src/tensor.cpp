@@ -713,7 +713,8 @@ Tensor sigmoid(const Tensor &t) {
                    1.0f / (1.0f + std::exp(-x)));
     }
   }
-  SetupAutograd<SigmoidFunction>(new_tensor, t);
+  // We reuse the sigmoid redult for efficiency
+  SetupAutograd<SigmoidFunction>(t, new_tensor, new_tensor);
   return new_tensor;
 }
 
