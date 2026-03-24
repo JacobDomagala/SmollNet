@@ -13,6 +13,11 @@ permissions:
 # Gotta do this for clang-tidy to work
 env:
   CONAN_HOME: ${{ github.workspace }}/.conan
+  CUDA_CACHE_KEY_SUFFIX: cuda-installer-ubuntu2404-12-8-570.86.10
+  CUDA_PIN_FILE: cuda-ubuntu2404.pin
+  CUDA_DEB_FILE: cuda-repo-ubuntu2404-12-8-local_12.8.0-570.86.10-1_amd64.deb
+  CUDA_PIN_URL: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-ubuntu2404.pin
+  CUDA_DEB_URL: https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda-repo-ubuntu2404-12-8-local_12.8.0-570.86.10-1_amd64.deb
 
 jobs:
   build:
@@ -40,23 +45,54 @@ jobs:
         cp ${{ github.workspace }}/utils/tests.py .
         python3 tests.py
 
+    - name: Restore CUDA installer from GitHub cache
+      id: cuda-installer-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: .ci-cache/cuda
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CUDA_CACHE_KEY_SUFFIX }}
+
+    - name: Download CUDA installer on cache miss
+      if: steps.cuda-installer-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        WORKSPACE_CUDA_DIR="${{ github.workspace }}/.ci-cache/cuda"
+
+        mkdir -p "${WORKSPACE_CUDA_DIR}"
+
+        wget -O "${WORKSPACE_CUDA_DIR}/${CUDA_PIN_FILE}" \
+          "${CUDA_PIN_URL}"
+        wget -O "${WORKSPACE_CUDA_DIR}/${CUDA_DEB_FILE}" \
+          "${CUDA_DEB_URL}"
+
+    - name: Save CUDA installer to GitHub cache
+      if: steps.cuda-installer-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: .ci-cache/cuda
+        key: ${{ runner.os }}-${{ runner.arch }}-${{ env.CUDA_CACHE_KEY_SUFFIX }}
+
     - name: setup init_script
       shell: bash
       run: |
-        echo "#!/bin/bash
+        cat > init_script.sh <<EOF
+        #!/bin/bash
+        set -euo pipefail
 
-        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-ubuntu2404.pin
-        mv cuda-ubuntu2404.pin /etc/apt/preferences.d/cuda-repository-pin-600
+        root_dir="\${1}"
+        cuda_dir="\${root_dir}/.ci-cache/cuda"
 
-        wget https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda-repo-ubuntu2404-12-8-local_12.8.0-570.86.10-1_amd64.deb
-        dpkg -i cuda-repo-ubuntu2404-12-8-local_12.8.0-570.86.10-1_amd64.deb
-
+        cp "\${cuda_dir}/${CUDA_PIN_FILE}" /etc/apt/preferences.d/cuda-repository-pin-600
+        dpkg -i "\${cuda_dir}/${CUDA_DEB_FILE}"
         cp /var/cuda-repo-ubuntu2404-12-8-local/cuda-*-keyring.gpg /usr/share/keyrings/
 
         apt-get update
         apt-get -y install cuda-toolkit-12-8
+        EOF
 
-        " > init_script.sh
+        chmod +x init_script.sh
 
     - name: Static Analysis
       uses: JacobDomagala/StaticAnalysis@master

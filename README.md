@@ -1,8 +1,8 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/wiki/JacobDomagala/SmollNet/logo.svg">
-  <img alt="logo" src="https://raw.githubusercontent.com/wiki/JacobDomagala/SmollNet/logo_white.svg" width="50%" height="50%">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/wiki/JacobDomagala/SmollNet/new_logo_light.svg">
+  <img alt="logo" src="https://raw.githubusercontent.com/wiki/JacobDomagala/SmollNet/new_logo_dark.svg" width="50%" height="50%">
 </picture>
 
 </div>
