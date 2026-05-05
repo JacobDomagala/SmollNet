@@ -5,6 +5,7 @@ add_library(${CUDA_LIBNAME}
     src/kernels.cu
     src/sum.cu
     src/welford.cu
+    src/prng.cu
 )
 
 target_link_libraries(${CUDA_LIBNAME}

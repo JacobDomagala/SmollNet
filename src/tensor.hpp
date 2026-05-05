@@ -12,7 +12,13 @@ struct AutogradMeta;
 
 struct Storage {
   void *ptr = nullptr;
-  Device device;
+  Device device = Device::CPU;
+
+  Storage() = default;
+  Storage(const Storage &) = delete;
+  Storage &operator=(const Storage &) = delete;
+  Storage(Storage &&) = delete;
+  Storage &operator=(Storage &&) = delete;
 
   ~Storage();
 };
