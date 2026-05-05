@@ -65,9 +65,9 @@ jobs:
     
         # Headers + CCCL + CUDA runtime dev files
         apt-get install -y \
-          cuda-minimal-build-12-8 \
-          cuda-cudart-dev-12-8 \
-          cuda-cccl-12-8
+          cuda-minimal-build-13-2 \
+          cuda-cudart-dev-13-2 \
+          cuda-cccl-13-2
     
         rm -f cuda-keyring_1.1-1_all.deb
         EOF

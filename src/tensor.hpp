@@ -129,6 +129,7 @@ Tensor ones(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad = false);
 Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad = false);
+void manual_seed(unsigned long long seed);
 
 template <size_t N>
 Tensor empty(const int64_t (&dims)[N], DataType t, Device d,

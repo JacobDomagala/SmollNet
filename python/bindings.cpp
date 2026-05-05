@@ -153,6 +153,8 @@ PYBIND11_MODULE(smollnet, m) {
       .export_values();
 
   bind_tensor_creation_functions(m);
+  m.def("manual_seed", &smollnet::manual_seed, "seed"_a,
+        "Initialize the default random generator seed");
 
   m.def("relu", &smollnet::relu);
   m.def("gelu", &smollnet::gelu);
@@ -234,7 +236,7 @@ PYBIND11_MODULE(smollnet, m) {
   // Dense network - this is more complex due to the variadic template
   // constructor
   py::class_<smollnet::Dense>(m, "Dense")
-      .def(py::init([](py::args args) {
+      .def(py::init([](const py::args& args) {
         std::vector<std::unique_ptr<smollnet::Module>> modules;
         for (auto &arg : args) {
           if (py::isinstance<smollnet::Linear>(arg)) {

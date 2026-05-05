@@ -72,7 +72,7 @@ TensorImpl::TensorImpl(const int64_t *dims, int64_t rank, DataType type) {
 */
 
 Tensor::Tensor() : impl_(nullptr) {}
-Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(impl) {}
+Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(std::move(impl)) {}
 
 bool Tensor::initialized() const noexcept { return impl_ != nullptr; }
 bool Tensor::expanded() const noexcept { return impl_->expanded; }
@@ -393,7 +393,7 @@ Tensor Tensor::transpose(int d0, int d1) const {
   }
 
   Tensor return_tensor;
-  return_tensor.impl_ = view;
+  return_tensor.impl_ = std::move(view);
 
   return return_tensor;
 }
@@ -703,7 +703,7 @@ Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d,
   storage->device = d;
 
   auto impl = std::make_shared<TensorImpl>(dims, rank, t);
-  impl->storage = storage;
+  impl->storage = std::move(storage);
   impl->requires_grad = requires_grad;
   if (requires_grad) {
     impl->grad = std::make_shared<AutogradMeta>();
@@ -733,11 +733,15 @@ Tensor ones(const int64_t *dims, size_t rank, DataType t, Device d,
   return Tensor{tensor};
 }
 
+void manual_seed(unsigned long long seed) {
+  launch_random_init(seed);
+}
+
 Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad) {
   auto tensor = empty(dims, rank, t, d, requires_grad);
 
-  launch_random_init(tensor.data(), tensor.numel());
+  launch_random_fill(tensor.data(), tensor.numel());
 
   return Tensor{tensor};
 }
