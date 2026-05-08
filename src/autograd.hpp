@@ -49,6 +49,13 @@ struct MulFunction : Function {
   void print() const override { printf("MulFunction\n"); }
 };
 
+struct DivFunction : Function {
+  DivFunction(const Tensor &lhs, const Tensor &rhs);
+  std::vector<Tensor>
+  backward(const std::vector<Tensor> &grad_outputs) override;
+  void print() const override { printf("DivFunction\n"); }
+};
+
 struct MatmulFunction : Function {
   MatmulFunction(const Tensor &lhs, const Tensor &rhs);
   std::vector<Tensor>

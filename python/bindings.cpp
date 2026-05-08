@@ -122,11 +122,27 @@ PYBIND11_MODULE(smollnet, m) {
       .def("print", &smollnet::Tensor::print)
       .def("print_elms", &smollnet::Tensor::print_elms)
 
-      .def("add", &smollnet::Tensor::add)
-      .def("sub", &smollnet::Tensor::sub)
+      .def("neg", &smollnet::Tensor::neg)
+      .def("add", py::overload_cast<const smollnet::Tensor &>(
+                      &smollnet::Tensor::add, py::const_))
+      .def("add",
+           py::overload_cast<float>(&smollnet::Tensor::add, py::const_))
+      .def("sub", py::overload_cast<const smollnet::Tensor &>(
+                      &smollnet::Tensor::sub, py::const_))
+      .def("sub",
+           py::overload_cast<float>(&smollnet::Tensor::sub, py::const_))
+      .def("rsub", &smollnet::Tensor::rsub)
       .def("sum", &smollnet::Tensor::sum, py::arg("dim"),
            py::arg("keep_dim") = false)
-      .def("mul", &smollnet::Tensor::mul)
+      .def("mul", py::overload_cast<const smollnet::Tensor &>(
+                      &smollnet::Tensor::mul, py::const_))
+      .def("mul",
+           py::overload_cast<float>(&smollnet::Tensor::mul, py::const_))
+      .def("div", py::overload_cast<const smollnet::Tensor &>(
+                      &smollnet::Tensor::div, py::const_))
+      .def("div",
+           py::overload_cast<float>(&smollnet::Tensor::div, py::const_))
+      .def("rdiv", &smollnet::Tensor::rdiv)
       .def("matmul", &smollnet::Tensor::matmul)
 
       .def("transpose", &smollnet::Tensor::transpose)
@@ -136,12 +152,35 @@ PYBIND11_MODULE(smollnet, m) {
       .def("cpu", &smollnet::Tensor::cpu)
       .def("copy", &smollnet::Tensor::copy)
 
+      .def(-py::self)
       .def(py::self + py::self)
       .def(py::self - py::self)
       .def(py::self * py::self)
+      .def(py::self / py::self)
+      .def(py::self + float())
+      .def(float() + py::self)
+      .def(py::self - float())
+      .def(float() - py::self)
+      .def(py::self * float())
+      .def(float() * py::self)
+      .def(py::self / float())
+      .def(float() / py::self)
       .def(py::self += py::self)
       .def(py::self -= py::self)
-      .def(py::self *= py::self);
+      .def(py::self *= py::self)
+      .def(py::self /= py::self)
+      .def(py::self += float())
+      .def(py::self -= float())
+      .def(py::self *= float())
+      .def(py::self /= float())
+      .def("__matmul__",
+           [](const smollnet::Tensor &l, const smollnet::Tensor &r) {
+             return l.matmul(r);
+           })
+      .def("__rmatmul__",
+           [](const smollnet::Tensor &r, const smollnet::Tensor &l) {
+             return l.matmul(r);
+           });
 
   py::enum_<smollnet::DataType>(m, "DataType")
       .value("f32", smollnet::DataType::f32)
@@ -162,7 +201,11 @@ PYBIND11_MODULE(smollnet, m) {
   m.def("sigmoid", &smollnet::sigmoid);
 
   m.def("matmul", &smollnet::matmul);
+  m.def("neg", &smollnet::neg);
+  m.def("add", &smollnet::add);
+  m.def("sub", &smollnet::sub);
   m.def("mul", &smollnet::mul);
+  m.def("div", &smollnet::div);
   m.def("sum", &smollnet::sum, py::arg("tensor"), py::arg("dim"),
         py::arg("keep_dim") = false);
 

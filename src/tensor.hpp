@@ -83,10 +83,18 @@ public:
   std::string to_string() const;
   size_t total_bytes() const noexcept;
 
+  Tensor neg() const;
   Tensor add(const Tensor&other) const;
+  Tensor add(float scalar) const;
   Tensor sub(const Tensor&other) const;
+  Tensor sub(float scalar) const;
+  Tensor rsub(float scalar) const;
   Tensor sum(int64_t dim, bool keep_dim = false) const;
   Tensor mul(const Tensor&other) const;
+  Tensor mul(float scalar) const;
+  Tensor div(const Tensor&other) const;
+  Tensor div(float scalar) const;
+  Tensor rdiv(float scalar) const;
   Tensor matmul(const Tensor&other) const;
 
   Tensor transpose(int d0, int d1) const;
@@ -109,14 +117,33 @@ Tensor sigmoid(const Tensor &t);
 
 // Operation functions
 Tensor matmul(const Tensor&l, const Tensor&r);
+Tensor neg(const Tensor&t);
+Tensor add(const Tensor& left, const Tensor& right);
+Tensor sub(const Tensor& left, const Tensor& right);
 Tensor mul(const Tensor& left, const Tensor& right);
+Tensor div(const Tensor& left, const Tensor& right);
 Tensor sum(const Tensor&t, int64_t dim, bool keep_dim = false);
+Tensor operator-(const Tensor&t);
 Tensor operator+(const Tensor&l, const Tensor&r);
 Tensor operator-(const Tensor&l, const Tensor&r);
 Tensor operator*(const Tensor&l, const Tensor&r);
+Tensor operator/(const Tensor&l, const Tensor&r);
+Tensor operator+(const Tensor&l, float scalar);
+Tensor operator+(float scalar, const Tensor&r);
+Tensor operator-(const Tensor&l, float scalar);
+Tensor operator-(float scalar, const Tensor&r);
+Tensor operator*(const Tensor&l, float scalar);
+Tensor operator*(float scalar, const Tensor&r);
+Tensor operator/(const Tensor&l, float scalar);
+Tensor operator/(float scalar, const Tensor&r);
 Tensor &operator+=(Tensor&l, const Tensor &r);
 Tensor &operator-=(Tensor&l, const Tensor &r);
 Tensor &operator*=(Tensor&l, const Tensor &r);
+Tensor &operator/=(Tensor&l, const Tensor &r);
+Tensor &operator+=(Tensor&l, float scalar);
+Tensor &operator-=(Tensor&l, float scalar);
+Tensor &operator*=(Tensor&l, float scalar);
+Tensor &operator/=(Tensor&l, float scalar);
 
 Tensor mse(const Tensor&pred, const Tensor&target);
 

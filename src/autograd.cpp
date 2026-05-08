@@ -21,6 +21,17 @@ Tensor create_grad_tensor(const Tensor &tensor) {
                tensor.device());
 }
 
+Tensor reduce_broadcast_gradient(Tensor grad, const Tensor &input) {
+  auto sizes = input.dims();
+  for (int dim = 0; dim < input.ndims(); ++dim) {
+    if (sizes[dim] == 1 and grad.size(dim) > 1) {
+      grad = sum(grad, dim, true);
+    }
+  }
+
+  return grad;
+}
+
 // AddFunction implementation
 AddFunction::AddFunction(const Tensor &lhs, const Tensor &rhs) {
   inputs = {lhs, rhs};
@@ -149,6 +160,34 @@ MulFunction::backward(const std::vector<Tensor> &grad_outputs) {
         grad = sum(grad, dim, true);
       }
     }
+    grad_inputs[1] = grad;
+  }
+
+  return grad_inputs;
+}
+
+DivFunction::DivFunction(const Tensor &lhs, const Tensor &rhs) {
+  inputs = {lhs, rhs};
+  needs_input_grad = {lhs.initialized() && lhs.requires_grad(),
+                      rhs.initialized() && rhs.requires_grad()};
+}
+
+std::vector<Tensor>
+DivFunction::backward(const std::vector<Tensor> &grad_outputs) {
+  ASSERT(grad_outputs.size() == 1,
+         "DivFunction expects exactly one gradient output");
+
+  std::vector<Tensor> grad_inputs(2);
+
+  if (needs_input_grad[0]) {
+    Tensor grad = grad_outputs[0] / inputs[1];
+    grad_inputs[0] = reduce_broadcast_gradient(grad, inputs[0]);
+  }
+
+  if (needs_input_grad[1]) {
+    Tensor grad = (grad_outputs[0] * inputs[0]) / (inputs[1] * inputs[1]);
+    grad = reduce_broadcast_gradient(grad, inputs[1]);
+    launch_negative(grad.data(), grad.numel());
     grad_inputs[1] = grad;
   }
 

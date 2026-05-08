@@ -54,6 +54,9 @@ void launch_sub_strided(void *out, void *a, void *b, const StrideInfo &s,
 void launch_mul(float *out, float *a, float *b, size_t numElems);
 void launch_mul_strided(void *dst, void *a, void *b, const StrideInfo &s,
                         size_t total);
+void launch_div(float *out, float *a, float *b, size_t numElems);
+void launch_div_strided(void *dst, void *a, void *b, const StrideInfo &s,
+                        size_t total);
 
 void launch_sum_dim0(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output);
 void launch_sum_dim1(void *out, void *in, const StrideAndSize& s_input, const StrideAndSize& s_output);
