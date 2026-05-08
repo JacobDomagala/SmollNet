@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <random>
 
 #include <cuda_runtime.h>
 
@@ -13,6 +14,16 @@
 #include <fmt/ranges.h>
 
 namespace smollnet {
+
+namespace {
+
+std::mt19937 &cpu_random_generator() {
+  // NOLINTNEXTLINE
+  static std::mt19937 generator(1234U);
+  return generator;
+}
+
+} // namespace
 
 template <typename GradF>
 void SetupAutograd(const Tensor &l, const Tensor &r, const Tensor &n) {
@@ -34,8 +45,9 @@ void SetupAutograd(const Tensor &n, const Tensor &other) {
   }
 }
 
-Tensor full_like(const Tensor &t, float value) {
-  Tensor out = empty(t.dims().data(), t.ndims(), t.dtype(), t.device());
+Tensor full_like(const Tensor &t, float value, bool requires_grad) {
+  Tensor out = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
+                     requires_grad);
   if (t.device() == Device::CUDA) {
     launch_fill(static_cast<float *>(out.data()), out.numel(), value);
   } else {
@@ -862,12 +874,17 @@ Tensor ones(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad) {
   auto tensor = empty(dims, rank, t, d, requires_grad);
 
-  launch_fill(static_cast<float *>(tensor.data()), tensor.numel(), 1.0f);
+  if (d == Device::CUDA) {
+    launch_fill(static_cast<float *>(tensor.data()), tensor.numel(), 1.0f);
+  } else {
+    std::fill_n(static_cast<float *>(tensor.data()), tensor.numel(), 1.0f);
+  }
 
   return Tensor{tensor};
 }
 
 void manual_seed(unsigned long long seed) {
+  cpu_random_generator().seed(static_cast<std::mt19937::result_type>(seed));
   launch_random_init(seed);
 }
 
@@ -875,9 +892,31 @@ Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad) {
   auto tensor = empty(dims, rank, t, d, requires_grad);
 
-  launch_random_fill(tensor.data(), tensor.numel());
+  if (d == Device::CUDA) {
+    launch_random_fill(tensor.data(), tensor.numel());
+  } else {
+    auto *data = static_cast<float *>(tensor.data());
+    std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+    auto &generator = cpu_random_generator();
+    for (size_t i = 0; i < tensor.numel(); ++i) {
+      data[i] = dist(generator);
+    }
+  }
 
   return Tensor{tensor};
+}
+
+Tensor zeros_like(const Tensor &t, bool requires_grad) {
+  return zeros(t.dims().data(), t.ndims(), t.dtype(), t.device(),
+               requires_grad);
+}
+
+Tensor ones_like(const Tensor &t, bool requires_grad) {
+  return full_like(t, 1.0f, requires_grad);
+}
+
+Tensor rand_like(const Tensor &t, bool requires_grad) {
+  return rand(t.dims().data(), t.ndims(), t.dtype(), t.device(), requires_grad);
 }
 
 } // namespace smollnet

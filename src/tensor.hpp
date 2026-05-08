@@ -156,6 +156,10 @@ Tensor ones(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad = false);
 Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d,
             bool requires_grad = false);
+Tensor full_like(const Tensor &t, float value, bool requires_grad = false);
+Tensor zeros_like(const Tensor &t, bool requires_grad = false);
+Tensor ones_like(const Tensor &t, bool requires_grad = false);
+Tensor rand_like(const Tensor &t, bool requires_grad = false);
 void manual_seed(unsigned long long seed);
 
 template <size_t N>
