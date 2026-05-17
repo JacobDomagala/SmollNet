@@ -2,8 +2,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 
 namespace smollnet {
+
+inline constexpr size_t kMaxTensorDims = 8;
+using TensorShape = std::array<int64_t, kMaxTensorDims>;
 
 enum class Device : uint8_t { CUDA, CPU };
 

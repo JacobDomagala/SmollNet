@@ -63,8 +63,8 @@ struct MatmulFunction : Function {
   void print() const override { printf("MatmulFunction\n"); }
 
 private:
-  std::array<int64_t, 3> lhs_shape;
-  std::array<int64_t, 3> rhs_shape;
+  TensorShape lhs_shape;
+  TensorShape rhs_shape;
 };
 
 struct ReLUFunction : Function {
@@ -103,7 +103,7 @@ struct SumFunction : Function {
 
 private:
   int64_t dim_;
-  std::array<int64_t, 3> input_shape_;
+  TensorShape input_shape_;
 };
 
 struct MseFunction : Function {

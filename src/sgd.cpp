@@ -8,17 +8,16 @@ namespace smollnet {
 
 void SGD::step() const {
   for (const auto &p : params_) {
-    ASSERT(
-        p.size(0) == p.grad().size(0),
-        fmt::format("Size 0 mismatch!: {} vs {}", p.size(0), p.grad().size(0)));
-    ASSERT(
-        p.size(1) == p.grad().size(1),
-        fmt::format("Size 1 mismatch!: {} vs {}", p.size(1), p.grad().size(1)));
-    ASSERT(
-        p.size(2) == p.grad().size(2),
-        fmt::format("Size 2 mismatch!: {} vs {}", p.size(2), p.grad().size(2)));
+    Tensor grad = p.grad();
+    ASSERT(p.ndims() == grad.ndims(),
+           fmt::format("Rank mismatch!: {} vs {}", p.ndims(), grad.ndims()));
+    for (int64_t dim = 0; dim < p.ndims(); ++dim) {
+      ASSERT(p.size(dim) == grad.size(dim),
+             fmt::format("Size {} mismatch!: {} vs {}", dim, p.size(dim),
+                         grad.size(dim)));
+    }
 
-    launch_sgd_update(p.data(), p.grad().data(), lr_, p.numel());
+    launch_sgd_update(p.data(), grad.data(), lr_, p.numel());
   }
 }
 

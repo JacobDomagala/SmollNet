@@ -3,6 +3,25 @@
 
 namespace smollnet {
 
+namespace {
+
+size_t shape_numel(const int64_t *shape, int64_t rank) {
+  size_t total = 1;
+  for (int64_t dim = 0; dim < rank; ++dim) {
+    total *= static_cast<size_t>(shape[dim]);
+  }
+  return total;
+}
+
+StrideAndSize padded_rank3(StrideAndSize shape) {
+  for (int64_t dim = shape.rank; dim < 3; ++dim) {
+    shape.size[dim] = 1;
+  }
+  return shape;
+}
+
+} // namespace
+
 template <size_t BLOCK_DIM = 256, int32_t MAJOR = ROW_MAJOR>
 __global__ void
 warp_level_sum(const float *__restrict__ in, float *__restrict__ out,
@@ -25,7 +44,7 @@ warp_level_sum(const float *__restrict__ in, float *__restrict__ out,
     idx = depth * s0_in + row * s1_in + col;
     out_idx = depth * s0_out + row * s1_out;
     in_bounds = (idx < n and col < dim_size);
-  } else if (MAJOR == COL_MAJOR) {
+  } else if constexpr (MAJOR == COL_MAJOR) {
     col = blockIdx.y;
     row = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -58,7 +77,7 @@ warp_level_sum(const float *__restrict__ in, float *__restrict__ out,
 
   if (threadIdx.x == 0) {
     float acc = 0.0f;
-  #pragma unroll
+#pragma unroll
     for (int i = 0; i < BLOCK_DIM / 32; ++i) {
       acc += sMem[i];
     }
@@ -311,6 +330,81 @@ void launch_sum_dim2(void *out, void *in, const StrideAndSize &s_input,
   }
 
   CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void generic_sum_dim_kernel(const float *__restrict__ in,
+                                       float *__restrict__ out,
+                                       const StrideAndSize s_input,
+                                       const StrideAndSize s_output,
+                                       const int64_t reduce_dim,
+                                       const size_t total) {
+  size_t linear = blockIdx.x * blockDim.x + threadIdx.x;
+  if (linear >= total) {
+    return;
+  }
+
+  size_t remaining = linear;
+  int64_t input_offset = 0;
+  int64_t output_offset = 0;
+
+  for (int64_t dim = s_input.rank - 1; dim >= 0; --dim) {
+    const int64_t coord = remaining % s_input.size[dim];
+    remaining /= s_input.size[dim];
+
+    input_offset += coord * s_input.stride[dim];
+
+    if (dim == reduce_dim) {
+      continue;
+    }
+
+    int64_t output_dim = dim;
+    if (s_output.rank != s_input.rank && dim > reduce_dim) {
+      output_dim = dim - 1;
+    }
+
+    output_offset += coord * s_output.stride[output_dim];
+  }
+
+  atomicAdd(out + output_offset, in[input_offset]);
+}
+
+void launch_generic_sum_dim(void *out, void *in, const StrideAndSize &s_input,
+                            const StrideAndSize &s_output, int64_t dim) {
+  const size_t total = shape_numel(s_input.size, s_input.rank);
+  if (total == 0) {
+    return;
+  }
+
+  constexpr int block = 256;
+  const int grid = static_cast<int>((total + block - 1) / block);
+
+  generic_sum_dim_kernel<<<grid, block>>>(
+      static_cast<const float *>(in), static_cast<float *>(out), s_input,
+      s_output, dim, total);
+
+  CHECK_CUDA(cudaGetLastError());
+}
+
+void launch_sum_dim(void *out, void *in, const StrideAndSize &s_input,
+                    const StrideAndSize &s_output, int64_t dim) {
+  if (s_input.rank <= 3) {
+    const StrideAndSize opt_input = padded_rank3(s_input);
+    const StrideAndSize opt_output = padded_rank3(s_output);
+
+    if (dim == 0) {
+      launch_sum_dim0(out, in, opt_input, opt_output);
+      return;
+    }
+    if (dim == 1) {
+      launch_sum_dim1(out, in, opt_input, opt_output);
+      return;
+    }
+
+    launch_sum_dim2(out, in, opt_input, opt_output);
+    return;
+  }
+
+  launch_generic_sum_dim(out, in, s_input, s_output, dim);
 }
 
 } // namespace smollnet
