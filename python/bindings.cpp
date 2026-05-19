@@ -237,6 +237,7 @@ PYBIND11_MODULE(smollnet, m) {
            });
 
   py::enum_<smollnet::DataType>(m, "DataType")
+      .value("f16", smollnet::DataType::f16)
       .value("f32", smollnet::DataType::f32)
       .export_values();
 

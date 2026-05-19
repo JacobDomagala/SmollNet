@@ -1,10 +1,12 @@
 #include "tensor.hpp"
 #include "autograd.hpp"
+#include "dtype_utils.hpp"
 #include "helpers.hpp"
 #include "kernels.cuh"
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstring>
 #include <iterator>
 #include <random>
@@ -118,9 +120,10 @@ TensorShape broadcast_shape(const Tensor &lhs, const Tensor &rhs,
   return out_shape;
 }
 
-using ContiguousBinaryLaunch = void (*)(float *, float *, float *, size_t);
-using StridedBinaryLaunch = void (*)(void *, void *, void *, const StrideInfo &,
-                                     size_t);
+using ContiguousBinaryLaunch = void (*)(void *, const void *, const void *,
+                                        DataType, size_t);
+using StridedBinaryLaunch = void (*)(void *, const void *, const void *,
+                                     DataType, const StrideInfo &, size_t);
 using CpuBinaryOp = float (*)(float, float);
 
 float add_values(float lhs, float rhs) { return lhs + rhs; }
@@ -173,25 +176,24 @@ Tensor binary_tensor_op(const Tensor &lhs, const Tensor &rhs,
                      lhs.requires_grad() || rhs.requires_grad());
 
   if (lhs.device() == Device::CPU) {
-    const auto *lhs_data = static_cast<const float *>(lhs_view.data());
-    const auto *rhs_data = static_cast<const float *>(rhs_view.data());
-    auto *out_data = static_cast<float *>(out.data());
-
     for (size_t idx = 0; idx < out.numel(); ++idx) {
       int64_t lhs_offset = 0;
       int64_t rhs_offset = 0;
       compute_binary_offsets(idx, out_shape, lhs_view.strides(),
                              rhs_view.strides(), out_rank, lhs_offset,
                              rhs_offset);
-      out_data[idx] = cpu_op(lhs_data[lhs_offset], rhs_data[rhs_offset]);
+      const float lhs_value =
+          load_scalar(lhs_view.data(), lhs.dtype(), lhs_offset);
+      const float rhs_value =
+          load_scalar(rhs_view.data(), rhs.dtype(), rhs_offset);
+      store_scalar(out.data(), out.dtype(), idx, cpu_op(lhs_value, rhs_value));
     }
     return out;
   }
 
   if (is_dense_contiguous(lhs_view) && is_dense_contiguous(rhs_view)) {
-    launch_contiguous(static_cast<float *>(out.data()),
-                      static_cast<float *>(lhs_view.data()),
-                      static_cast<float *>(rhs_view.data()), out.numel());
+    launch_contiguous(out.data(), lhs_view.data(), rhs_view.data(), lhs.dtype(),
+                      out.numel());
     return out;
   }
 
@@ -203,17 +205,19 @@ Tensor binary_tensor_op(const Tensor &lhs, const Tensor &rhs,
     stride_info.b_stride[dim] = rhs_view.strides()[dim];
   }
 
-  launch_strided(out.data(), lhs_view.data(), rhs_view.data(), stride_info,
-                 out.numel());
+  launch_strided(out.data(), lhs_view.data(), rhs_view.data(), lhs.dtype(),
+                 stride_info, out.numel());
   return out;
 }
 
-void append_tensor_values(fmt::memory_buffer &out, const float *data,
+void append_tensor_values(fmt::memory_buffer &out, const void *data,
+                          DataType dtype,
                           const TensorShape &sizes,
                           const TensorShape &strides, int64_t rank,
                           int64_t dim, int64_t offset) {
   if (rank == 0) {
-    fmt::format_to(std::back_inserter(out), "{:.4f}", data[offset]);
+    fmt::format_to(std::back_inserter(out), "{:.4f}",
+                   load_scalar(data, dtype, offset));
     return;
   }
 
@@ -221,9 +225,10 @@ void append_tensor_values(fmt::memory_buffer &out, const float *data,
   for (int64_t i = 0; i < sizes[dim]; ++i) {
     const int64_t next_offset = offset + i * strides[dim];
     if (dim == rank - 1) {
-      fmt::format_to(std::back_inserter(out), "{:.4f}", data[next_offset]);
+      fmt::format_to(std::back_inserter(out), "{:.4f}",
+                     load_scalar(data, dtype, next_offset));
     } else {
-      append_tensor_values(out, data, sizes, strides, rank, dim + 1,
+      append_tensor_values(out, data, dtype, sizes, strides, rank, dim + 1,
                            next_offset);
     }
 
@@ -260,9 +265,11 @@ Tensor full_like(const Tensor &t, float value, bool requires_grad) {
   Tensor out = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
                      requires_grad);
   if (t.device() == Device::CUDA) {
-    launch_fill(static_cast<float *>(out.data()), out.numel(), value);
+    launch_fill(out.data(), out.dtype(), out.numel(), value);
   } else {
-    std::fill_n(static_cast<float *>(out.data()), out.numel(), value);
+    for (size_t idx = 0; idx < out.numel(); ++idx) {
+      store_scalar(out.data(), out.dtype(), idx, value);
+    }
   }
 
   return out;
@@ -328,7 +335,14 @@ void Tensor::zero_grad() const {
   ASSERT(autograd(), "Tensor doesn't have gradient!");
   ASSERT(grad().initialized(), "Gradient is not initialized!");
 
-  launch_fill(static_cast<float *>(grad().data()), grad().numel(), 0.0f);
+  Tensor g = grad();
+  if (g.device() == Device::CUDA) {
+    launch_fill(g.data(), g.dtype(), g.numel(), 0.0f);
+  } else {
+    for (size_t idx = 0; idx < g.numel(); ++idx) {
+      store_scalar(g.data(), g.dtype(), idx, 0.0f);
+    }
+  }
 }
 
 bool Tensor::requires_grad() const noexcept { return impl()->requires_grad; }
@@ -387,7 +401,7 @@ std::string Tensor::to_string() const {
 
   // Could be expensive
   auto t = cpu();
-  const float *raw_data = static_cast<const float *>(t.data());
+  const void *raw_data = t.data();
 
   const auto &sizes = dims();
   const auto &stride = strides();
@@ -395,7 +409,7 @@ std::string Tensor::to_string() const {
   fmt::memory_buffer out;
 
   fmt::format_to(std::back_inserter(out), "Tensor: (");
-  append_tensor_values(out, raw_data, sizes, stride, ndims(), 0, 0);
+  append_tensor_values(out, raw_data, dtype(), sizes, stride, ndims(), 0, 0);
   fmt::format_to(std::back_inserter(out), ")\n");
 
   return fmt::to_string(out);
@@ -573,10 +587,34 @@ Tensor matmul(const Tensor &l, const Tensor &r) {
   ASSERT(l.device() == r.device(),
          fmt::format("Device mismatch! {} and {}", get_device_name(l.device()),
                      get_device_name(r.device())));
+  ASSERT(l.dtype() == r.dtype(),
+         fmt::format("DType mismatch! {} and {}", get_name(l.dtype()),
+                     get_name(r.dtype())));
 
   bool needs_grad = any_requires_grad({l, r});
   Tensor new_tensor =
       empty({l.dims()[0], r.dims()[1]}, l.dtype(), l.device(), needs_grad);
+
+  if (l.device() == Device::CPU) {
+    for (int64_t row = 0; row < new_tensor.size(0); ++row) {
+      for (int64_t col = 0; col < new_tensor.size(1); ++col) {
+        float acc = 0.0f;
+        for (int64_t k = 0; k < l.size(1); ++k) {
+          const int64_t lhs_offset = row * l.strides()[0] + k * l.strides()[1];
+          const int64_t rhs_offset = k * r.strides()[0] + col * r.strides()[1];
+          acc += load_scalar(l.data(), l.dtype(), lhs_offset) *
+                 load_scalar(r.data(), r.dtype(), rhs_offset);
+        }
+
+        const int64_t out_offset =
+            row * new_tensor.strides()[0] + col * new_tensor.strides()[1];
+        store_scalar(new_tensor.data(), new_tensor.dtype(), out_offset, acc);
+      }
+    }
+
+    SetupAutograd<MatmulFunction>(l, r, new_tensor);
+    return new_tensor;
+  }
 
   StrideInfo stride_info{};
   stride_info.output_size[0] = new_tensor.size(0);
@@ -599,8 +637,8 @@ Tensor matmul(const Tensor &l, const Tensor &r) {
   size_info.b_size[0] = r.size(0);
   size_info.b_size[1] = r.size(1);
 
-  launch_matmul(new_tensor.data(), l.data(), r.data(), stride_info, size_info,
-                new_tensor.numel());
+  launch_matmul(new_tensor.data(), l.data(), r.data(), l.dtype(), stride_info,
+                size_info, new_tensor.numel());
 
   SetupAutograd<MatmulFunction>(l, r, new_tensor);
 
@@ -611,7 +649,14 @@ Tensor relu(const Tensor &t) {
   Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
                             t.requires_grad());
 
-  launch_relu(new_tensor.data(), t.data(), t.numel());
+  if (t.device() == Device::CUDA) {
+    launch_relu(new_tensor.data(), t.data(), t.dtype(), t.numel());
+  } else {
+    for (size_t idx = 0; idx < t.numel(); ++idx) {
+      store_scalar(new_tensor.data(), new_tensor.dtype(), idx,
+                   std::max(load_scalar(t.data(), t.dtype(), idx), 0.0f));
+    }
+  }
 
   SetupAutograd<ReLUFunction>(new_tensor, t);
 
@@ -622,7 +667,19 @@ Tensor gelu(const Tensor &t) {
   Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
                             t.requires_grad());
 
-  launch_gelu(new_tensor.data(), t.data(), t.numel());
+  if (t.device() == Device::CUDA) {
+    launch_gelu(new_tensor.data(), t.data(), t.dtype(), t.numel());
+  } else {
+    constexpr float sqrt_2_over_pi = 0.7978845608f;
+    for (size_t idx = 0; idx < t.numel(); ++idx) {
+      const float x = load_scalar(t.data(), t.dtype(), idx);
+      const float value =
+          0.5f * x *
+          (1.0f +
+           std::tanh(sqrt_2_over_pi * (x + 0.044715f * x * x * x)));
+      store_scalar(new_tensor.data(), new_tensor.dtype(), idx, value);
+    }
+  }
 
   SetupAutograd<GeLUFunction>(new_tensor, t);
   return new_tensor;
@@ -632,7 +689,14 @@ Tensor tanh(const Tensor &t) {
   Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
                             t.requires_grad());
 
-  launch_tanh(new_tensor.data(), t.data(), t.numel());
+  if (t.device() == Device::CUDA) {
+    launch_tanh(new_tensor.data(), t.data(), t.dtype(), t.numel());
+  } else {
+    for (size_t idx = 0; idx < t.numel(); ++idx) {
+      store_scalar(new_tensor.data(), new_tensor.dtype(), idx,
+                   std::tanh(load_scalar(t.data(), t.dtype(), idx)));
+    }
+  }
   SetupAutograd<TanhFunction>(new_tensor, t);
   return new_tensor;
 }
@@ -641,7 +705,15 @@ Tensor sigmoid(const Tensor &t) {
   Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
                             t.requires_grad());
 
-  launch_sigmoid(new_tensor.data(), t.data(), t.numel());
+  if (t.device() == Device::CUDA) {
+    launch_sigmoid(new_tensor.data(), t.data(), t.dtype(), t.numel());
+  } else {
+    for (size_t idx = 0; idx < t.numel(); ++idx) {
+      const float x = load_scalar(t.data(), t.dtype(), idx);
+      store_scalar(new_tensor.data(), new_tensor.dtype(), idx,
+                   1.0f / (1.0f + std::exp(-x)));
+    }
+  }
   SetupAutograd<SigmoidFunction>(new_tensor, t);
   return new_tensor;
 }
@@ -649,7 +721,8 @@ Tensor sigmoid(const Tensor &t) {
 Tensor sum(const Tensor &t, int64_t dim, bool keep_dim) {
   auto dims = t.dims();
   auto new_rank = keep_dim ? t.ndims() : t.ndims() - 1;
-  auto data_type = t.dtype();
+  auto input_type = t.dtype();
+  auto output_type = accumulation_dtype(input_type);
   auto device = t.device();
 
   ASSERT(dim < t.ndims(),
@@ -673,9 +746,9 @@ Tensor sum(const Tensor &t, int64_t dim, bool keep_dim) {
   }
 
   Tensor new_tensor =
-      zeros(out_dims.data(), new_rank, data_type, device, t.requires_grad());
+      zeros(out_dims.data(), new_rank, output_type, device, t.requires_grad());
 
-  auto *srcp = t.data();
+  const auto *srcp = t.data();
   auto *dst = new_tensor.data();
 
   StrideAndSize s_input{};
@@ -689,7 +762,38 @@ Tensor sum(const Tensor &t, int64_t dim, bool keep_dim) {
   copy_shape_to_kernel_array(new_tensor.strides(), s_output.stride,
                              s_output.rank);
 
-  launch_sum_dim(dst, srcp, s_input, s_output, dim);
+  if (device == Device::CPU) {
+    for (size_t linear = 0; linear < new_tensor.numel(); ++linear) {
+      int64_t remaining = static_cast<int64_t>(linear);
+      int64_t input_base_offset = 0;
+      int64_t output_offset = 0;
+
+      for (int64_t out_dim = s_output.rank; out_dim > 0; --out_dim) {
+        const int64_t output_axis = out_dim - 1;
+        const int64_t coord = remaining % s_output.size[output_axis];
+        remaining /= s_output.size[output_axis];
+
+        output_offset += coord * s_output.stride[output_axis];
+
+        const bool kept_dim = s_output.rank == s_input.rank;
+        const int64_t input_dim =
+            kept_dim || output_axis < dim ? output_axis : output_axis + 1;
+        input_base_offset += coord * s_input.stride[input_dim];
+      }
+
+      float acc = 0.0f;
+      for (int64_t reduce_idx = 0; reduce_idx < s_input.size[dim];
+           ++reduce_idx) {
+        const int64_t input_offset =
+            input_base_offset + reduce_idx * s_input.stride[dim];
+        acc += load_scalar(srcp, input_type, input_offset);
+      }
+
+      store_scalar(dst, output_type, output_offset, acc);
+    }
+  } else {
+    launch_sum_dim(dst, srcp, input_type, s_input, s_output, dim);
+  }
 
   return new_tensor;
 }
@@ -706,10 +810,31 @@ Tensor div(const Tensor &left, const Tensor &right) { return left.div(right); }
 
 Tensor mse(const Tensor &pred, const Tensor &target) {
   ASSERT(pred.dims() == target.dims(), "");
+  ASSERT(pred.device() == target.device(),
+         fmt::format("Device mismatch! {} and {}",
+                     get_device_name(pred.device()),
+                     get_device_name(target.device())));
+  ASSERT(pred.dtype() == target.dtype(),
+         fmt::format("DType mismatch! {} and {}", get_name(pred.dtype()),
+                     get_name(target.dtype())));
 
   bool requires_grad = any_requires_grad({pred, target});
-  auto new_tensor = zeros({1}, pred.dtype(), pred.device(), requires_grad);
-  launch_mse(new_tensor.data(), pred.data(), target.data(), pred.numel());
+  auto new_tensor =
+      zeros({1}, accumulation_dtype(pred.dtype()), pred.device(), requires_grad);
+
+  if (pred.device() == Device::CPU) {
+    float acc = 0.0f;
+    for (size_t idx = 0; idx < pred.numel(); ++idx) {
+      const float diff = load_scalar(pred.data(), pred.dtype(), idx) -
+                         load_scalar(target.data(), target.dtype(), idx);
+      acc += diff * diff;
+    }
+    store_scalar(new_tensor.data(), new_tensor.dtype(), 0,
+                 acc / static_cast<float>(pred.numel()));
+  } else {
+    launch_mse(new_tensor.data(), new_tensor.dtype(), pred.data(),
+               target.data(), pred.dtype(), pred.numel());
+  }
 
   SetupAutograd<MseFunction>(pred, target, new_tensor);
   return new_tensor;
@@ -786,15 +911,18 @@ Tensor empty(const int64_t *dims, size_t rank, DataType t, Device d,
   ASSERT(rank <= kMaxTensorDims,
          fmt::format("Tensor rank {} exceeds max rank {}", rank,
                      kMaxTensorDims));
+  ASSERT(is_supported_float_dtype(t),
+         fmt::format("Unsupported dtype {}. Supported dtypes are f16 and f32",
+                     get_name(t)));
 
   auto storage = std::make_shared<Storage>();
 
-  float *ptr;
+  void *ptr = nullptr;
   size_t bytes = element_size(t) * product(dims, rank);
   if (d == Device::CUDA) {
     CHECK_CUDA(cudaMalloc(&ptr, bytes));
   } else {
-    ptr = static_cast<float *>(malloc(bytes));
+    ptr = malloc(bytes);
   }
 
   storage->ptr = ptr;
@@ -827,9 +955,11 @@ Tensor ones(const int64_t *dims, size_t rank, DataType t, Device d,
   auto tensor = empty(dims, rank, t, d, requires_grad);
 
   if (d == Device::CUDA) {
-    launch_fill(static_cast<float *>(tensor.data()), tensor.numel(), 1.0f);
+    launch_fill(tensor.data(), tensor.dtype(), tensor.numel(), 1.0f);
   } else {
-    std::fill_n(static_cast<float *>(tensor.data()), tensor.numel(), 1.0f);
+    for (size_t idx = 0; idx < tensor.numel(); ++idx) {
+      store_scalar(tensor.data(), tensor.dtype(), idx, 1.0f);
+    }
   }
 
   return Tensor{tensor};
@@ -845,13 +975,12 @@ Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d,
   auto tensor = empty(dims, rank, t, d, requires_grad);
 
   if (d == Device::CUDA) {
-    launch_random_fill(tensor.data(), tensor.numel());
+    launch_random_fill(tensor.data(), tensor.dtype(), tensor.numel());
   } else {
-    auto *data = static_cast<float *>(tensor.data());
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);
     auto &generator = cpu_random_generator();
     for (size_t i = 0; i < tensor.numel(); ++i) {
-      data[i] = dist(generator);
+      store_scalar(tensor.data(), tensor.dtype(), i, dist(generator));
     }
   }
 

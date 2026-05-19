@@ -1,6 +1,7 @@
 #include "layer_norm.hpp"
-#include "kernels.cuh"
 #include "autograd.hpp"
+#include "dtype_utils.hpp"
+#include "kernels.cuh"
 
 #include <fmt/format.h>
 
@@ -17,21 +18,28 @@ Tensor LayerNorm::compute(const Tensor &t) {
     bias = zeros({t.size(1), 1}, t.dtype(), t.device(), true);
   }
 
-  auto mean = zeros({t.size(0), 1}, t.dtype(), t.device());
-  launch_mean_2d(mean.data(), t.data(), t.size(0), t.size(1));
+  const DataType stats_dtype = accumulation_dtype(t.dtype());
 
-  auto variance = zeros({t.size(0), 1}, t.dtype(), t.device());
-  launch_welford(t.data(), variance.data(), t.size(1), t.size(0), 0, WelfordType::PopulationVariance);
+  auto mean = zeros({t.size(0), 1}, stats_dtype, t.device());
+  launch_mean_2d(mean.data(), mean.dtype(), t.data(), t.dtype(), t.size(0),
+                 t.size(1));
 
-  auto normalized = zeros(t.dims().data(), t.ndims(), t.dtype(), t.device(), t.requires_grad());
+  auto variance = zeros({t.size(0), 1}, stats_dtype, t.device());
+  launch_welford(t.data(), t.dtype(), variance.data(), variance.dtype(),
+                 t.size(1), t.size(0), 0, WelfordType::PopulationVariance);
+
+  auto normalized = zeros(t.dims().data(), t.ndims(), t.dtype(), t.device(),
+                          t.requires_grad());
   launch_layer_norm(normalized.data(), t.data(), mean.data(), variance.data(),
-                    weights.data(), bias.data(), t.size(0), t.size(1));
+                    weights.data(), bias.data(), normalized.dtype(),
+                    mean.dtype(), t.size(0), t.size(1));
 
-  if(normalized.requires_grad()) {
-    auto* meta = normalized.autograd();
+  if (normalized.requires_grad()) {
+    auto *meta = normalized.autograd();
 
     meta->is_leaf = false;
-    meta->grad_fn = std::make_shared<LayerNormFunction>(mean, variance, normalized, t, weights, bias);
+    meta->grad_fn = std::make_shared<LayerNormFunction>(
+        mean, variance, normalized, t, weights, bias);
   }
 
   return normalized;
