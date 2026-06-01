@@ -1,4 +1,5 @@
 #include "smollnet.hpp"
+#include "dtype_utils.hpp"
 
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
@@ -139,6 +140,84 @@ void bind_tensor_creation_functions(pybind11::module &m) {
         "requires_grad"_a = false);
 }
 
+void bind_dataset_functions(pybind11::module &m) {
+  py::class_<smollnet::DatasetBatch>(m, "DatasetBatch")
+      .def_readwrite("inputs", &smollnet::DatasetBatch::inputs)
+      .def_readwrite("targets", &smollnet::DatasetBatch::targets);
+
+  py::class_<smollnet::TensorDataset, smollnet::TensorDatasetPtr>(
+      m, "TensorDataset")
+      .def(py::init<smollnet::Tensor, smollnet::Tensor>(), "inputs"_a,
+           "targets"_a)
+      .def("size", &smollnet::TensorDataset::size)
+      .def("inputs",
+           [](const smollnet::TensorDataset &dataset) {
+             return dataset.inputs();
+           })
+      .def("targets",
+           [](const smollnet::TensorDataset &dataset) {
+             return dataset.targets();
+           })
+      .def("batch",
+           py::overload_cast<size_t, size_t>(&smollnet::TensorDataset::batch,
+                                             py::const_),
+           "start"_a, "count"_a)
+      .def("batch",
+           py::overload_cast<const std::vector<size_t> &>(
+               &smollnet::TensorDataset::batch, py::const_),
+           "indices"_a);
+
+  py::class_<smollnet::DataLoaderOptions>(m, "DataLoaderOptions")
+      .def(py::init<>())
+      .def_readwrite("batch_size", &smollnet::DataLoaderOptions::batch_size)
+      .def_readwrite("shuffle", &smollnet::DataLoaderOptions::shuffle)
+      .def_readwrite("drop_last", &smollnet::DataLoaderOptions::drop_last)
+      .def_readwrite("seed", &smollnet::DataLoaderOptions::seed);
+
+  py::class_<smollnet::DataLoader>(m, "DataLoader")
+      .def(py::init<smollnet::TensorDatasetPtr,
+                    smollnet::DataLoaderOptions>(),
+           "dataset"_a, "options"_a)
+      .def(py::init<smollnet::TensorDatasetPtr, size_t, bool, bool,
+                    uint32_t>(),
+           "dataset"_a, "batch_size"_a, "shuffle"_a = false,
+           "drop_last"_a = false, "seed"_a = 1234U)
+      .def("reset", &smollnet::DataLoader::reset)
+      .def("has_next", &smollnet::DataLoader::has_next)
+      .def("next", &smollnet::DataLoader::next)
+      .def("batch_size", &smollnet::DataLoader::batch_size)
+      .def("num_batches", &smollnet::DataLoader::num_batches)
+      .def("dataset_size", &smollnet::DataLoader::dataset_size)
+      .def("__iter__",
+           [](smollnet::DataLoader &loader) -> smollnet::DataLoader & {
+             loader.reset();
+             return loader;
+           },
+           py::return_value_policy::reference_internal)
+      .def("__next__", [](smollnet::DataLoader &loader) {
+        if (!loader.has_next()) {
+          throw py::stop_iteration();
+        }
+        return loader.next();
+      });
+
+  py::class_<smollnet::CSVLoaderOptions>(m, "CSVLoaderOptions")
+      .def(py::init<>())
+      .def_readwrite("has_header", &smollnet::CSVLoaderOptions::has_header)
+      .def_readwrite("delimiter", &smollnet::CSVLoaderOptions::delimiter)
+      .def_readwrite("target_columns",
+                     &smollnet::CSVLoaderOptions::target_columns)
+      .def_readwrite("categorical_columns",
+                     &smollnet::CSVLoaderOptions::categorical_columns)
+      .def_readwrite("dtype", &smollnet::CSVLoaderOptions::dtype)
+      .def_readwrite("device", &smollnet::CSVLoaderOptions::device)
+      .def_readwrite("requires_grad",
+                     &smollnet::CSVLoaderOptions::requires_grad);
+
+  m.def("load_csv_dataset", &smollnet::load_csv_dataset, "path"_a,
+        "options"_a = smollnet::CSVLoaderOptions{});
+}
+
 // Single module definition
 PYBIND11_MODULE(smollnet, m) {
   m.doc() = "SmollNet Tensor Module";
@@ -205,6 +284,14 @@ PYBIND11_MODULE(smollnet, m) {
       .def("cuda", &smollnet::Tensor::cuda)
       .def("cpu", &smollnet::Tensor::cpu)
       .def("copy", &smollnet::Tensor::copy)
+      .def("item",
+           [](const smollnet::Tensor &tensor) {
+             if (tensor.numel() != 1) {
+               throw std::invalid_argument("Tensor.item() expects one element");
+             }
+             smollnet::Tensor host = tensor.cpu();
+             return smollnet::load_scalar(host.data(), host.dtype(), 0);
+           })
 
       .def(-py::self)
       .def(py::self + py::self)
@@ -247,6 +334,7 @@ PYBIND11_MODULE(smollnet, m) {
       .export_values();
 
   bind_tensor_creation_functions(m);
+  bind_dataset_functions(m);
   m.def("manual_seed", &smollnet::manual_seed, "seed"_a,
         "Initialize the default random generator seed");
 

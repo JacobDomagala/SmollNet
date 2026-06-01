@@ -9,77 +9,148 @@
 
 ---
 
+# SmollNet
 
-SmollNet is a small deep learning library written in pure CUDA/C++
+SmollNet is a small deep learning library written in CUDA/C++ with Python
+bindings. It is a learning-oriented neural-network stack: tensors, CUDA kernels,
+autograd, basic neural-network layers, optimization, and simple dataset loading
+live in one compact codebase.
 
-Example usage:
+The project is intentionally small. It is useful for experimenting with how deep
+learning libraries are built, writing CUDA kernels, and training simple models
+without hiding the machinery behind a large framework.
 
-```cpp
-#include <smollnet.hpp>
+## Features
 
-#include <fmt/core.h>
+- Tensor operations on CPU and CUDA devices
+- Autograd for basic arithmetic, matrix multiplication, reductions, activations,
+  layer normalization, and mean-squared error
+- Neural-network modules: `Linear`, `ReLU`, `GeLU`, `LayerNorm`, and `Dense`
+- SGD optimizer
+- Python bindings via pybind11
+- CSV dataset loading with mini-batch iteration
+- One-hot encoding for categorical CSV feature columns
 
-using namespace smollnet;
+## Requirements
 
-int main() {
-  constexpr batch_size = 10;
-  Tensor input = rand({batch_size, 128}, DataType::f32, Device::CUDA);
-  Tensor targets = rand({batch_size, 1}, DataType::f32, Device::CUDA);
-  auto targets_h = targets.cpu();
+- CMake 3.27+
+- Ninja
+- Conan 2.x
+- CUDA toolkit
+- A CUDA-capable GPU for neural-network training examples
 
-  auto net = Dense(Linear(128, 64), ReLU(), Linear(64, 1));
+## Build
 
-  for (int epoch = 0; epoch < 32; ++epoch) {
-    auto res = net.forward(input);
-    auto loss = mse(res, targets);
-    fmt::print("epoch:{} predicted:{} target:{} loss:{}\n", epoch,
-               static_cast<float *>(res.cpu().data())[0],
-               static_cast<float *>(targets_h.data())[0],
-               static_cast<float *>(loss.cpu().data())[0]);
-    loss.backward();
-
-    auto optim = SGD(net.parameters(), 0.00001f);
-    optim.step();
-    optim.zero_grad();
-  }
-}
-
+```bash
+./build.sh
 ```
 
-Or in python:
+The build script installs the C++ library and Python extension into
+`build/smollnet`, then builds the C++ example target.
+
+To import the Python extension from the local build:
+
+```bash
+PYTHONPATH=build python3 -c "import smollnet; print(smollnet)"
+```
+
+## Python Quick Start
 
 ```python
 import smollnet
 
-batch_size = 10
-num_features = 128
+batch_size = 32
+input_features = 10
 
-# Generate random data
-x = smollnet.rand(batch_size, num_features, requires_grad=True)
+x = smollnet.rand(batch_size, input_features, requires_grad=True)
 y = smollnet.rand(batch_size, 1, requires_grad=True)
 
-# Create network
 network = smollnet.Dense(
-    smollnet.Linear(num_features, 64),
+    smollnet.Linear(input_features, 64),
     smollnet.GeLU(),
-    smollnet.Linear(64, 1))
+    smollnet.Linear(64, 1),
+)
 
-# Training loop
-num_epochs = 64
-for epoch in range(num_epochs):
-    # Forward pass
-    output = network.forward(x)
+optimizer = smollnet.sgd(network.parameters(), lr=0.005)
 
-    # Compute loss
-    loss = smollnet.mse(output, y)
-    loss.backward()
-
-    # Backward pass
-    optimizer = smollnet.sgd(network.parameters(), lr=0.005)
-
-    # Update parameters
-    optimizer.step()
-    optimizer.zero_grad()
-
-    print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {loss}")
+prediction = network.forward(x)
+loss = smollnet.mse(prediction, y)
+loss.backward()
+optimizer.step()
+optimizer.zero_grad()
 ```
+
+## Loading CSV Data
+
+CSV files load into a `TensorDataset`, where the final `target_columns` columns
+become targets and all preceding columns become inputs. Numeric feature columns
+are parsed as floats. Categorical feature columns can be marked by zero-based
+CSV column index and are one-hot encoded.
+
+```python
+options = smollnet.CSVLoaderOptions()
+options.has_header = False
+options.target_columns = 1
+options.categorical_columns = [0]
+options.device = smollnet.Device.CUDA
+
+dataset = smollnet.load_csv_dataset("data/abalone.data", options)
+
+loader_options = smollnet.DataLoaderOptions()
+loader_options.batch_size = 128
+loader_options.shuffle = True
+
+loader = smollnet.DataLoader(dataset, loader_options)
+
+for batch in loader:
+    prediction = network.forward(batch.inputs)
+    loss = smollnet.mse(prediction, batch.targets)
+```
+
+For numeric-only CSV files, leave `categorical_columns` empty.
+
+## Regression Example
+
+The repository includes the UCI Abalone dataset in `data/abalone.data`. The
+example trains a small regression model to predict shell rings from one
+categorical feature and seven numeric features:
+
+```bash
+PYTHONPATH=build python3 example/abalone_regression.py
+```
+
+The current neural-network layers allocate CUDA tensors, so this example needs a
+CUDA-capable GPU.
+
+## C++ Usage
+
+```cpp
+#include <smollnet.hpp>
+
+using namespace smollnet;
+
+int main() {
+  Tensor x = rand({32, 10}, DataType::f32, Device::CUDA, true);
+  Tensor y = rand({32, 1}, DataType::f32, Device::CUDA, true);
+
+  auto network = Dense(Linear(10, 64), GeLU(), Linear(64, 1));
+  auto optimizer = SGD(network.parameters(), 0.005f);
+
+  auto prediction = network.forward(x);
+  auto loss = mse(prediction, y);
+  loss.backward();
+
+  optimizer.step();
+  optimizer.zero_grad();
+}
+```
+
+## Current Limitations
+
+- Training examples require CUDA because the neural-network layers currently
+  allocate CUDA tensors.
+- CSV targets are numeric. String/categorical support is for input feature
+  columns.
+- The library currently focuses on regression-style examples with `mse`; common
+  classification losses such as cross-entropy are not implemented yet.
+- Model serialization is not implemented yet.
