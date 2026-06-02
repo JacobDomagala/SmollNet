@@ -702,8 +702,7 @@ Tensor tanh(const Tensor &t) {
 }
 
 Tensor sigmoid(const Tensor &t) {
-  Tensor new_tensor = empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
-                            t.requires_grad());
+  Tensor new_tensor = empty_like(t, t.requires_grad());
 
   if (t.device() == Device::CUDA) {
     launch_sigmoid(new_tensor.data(), t.data(), t.dtype(), t.numel());
@@ -714,7 +713,8 @@ Tensor sigmoid(const Tensor &t) {
                    1.0f / (1.0f + std::exp(-x)));
     }
   }
-  SetupAutograd<SigmoidFunction>(new_tensor, t);
+  // We reuse the sigmoid redult for efficiency
+  SetupAutograd<SigmoidFunction>(t, new_tensor, new_tensor);
   return new_tensor;
 }
 
@@ -985,6 +985,11 @@ Tensor rand(const int64_t *dims, size_t rank, DataType t, Device d,
   }
 
   return Tensor{tensor};
+}
+
+Tensor empty_like(const Tensor &t, bool requires_grad) {
+  return empty(t.dims().data(), t.ndims(), t.dtype(), t.device(),
+               requires_grad);
 }
 
 Tensor zeros_like(const Tensor &t, bool requires_grad) {
